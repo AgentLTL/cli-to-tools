@@ -130,6 +130,21 @@ find:
     - {flags: [-size]}
     - {flags: [-delete], type: bool}
     - {flags: [-print], type: bool}
+    - {flags: [-print0], type: bool}
+    - {flags: [-printf]}
+    - {flags: [-ls], type: bool}
+    - {flags: [-empty], type: bool}
+    - {flags: [-prune], type: bool}
+    - {flags: [-regex]}
+    - {flags: [-perm]}
+    - {flags: [-user]}
+    - {flags: [-group]}
+    - {flags: [-newer]}
+    - {flags: [-mmin]}
+    - {flags: [-atime]}
+    - {flags: [-ctime]}
+    - {flags: [-inum]}
+    - {flags: [-L], dest: follow_links, type: bool}
   positionals: [{name: paths, nargs: "*"}]
 
 head:
@@ -205,4 +220,64 @@ tar:
     - {flags: [-v, --verbose], type: bool}
     - {flags: [-f, --file]}
     - {flags: [-C, --directory]}
+  positionals: [{name: paths, nargs: "*"}]
+
+awk:
+  aliases: [gawk]
+  options:
+    - {flags: [-F, --field-separator]}
+    - {flags: [-v, --assign], type: list}
+    - {flags: [-f, --file], type: list}
+  positionals: [{name: args, nargs: "*"}]
+
+cut:
+  options:
+    - {flags: [-d, --delimiter]}
+    - {flags: [-f, --fields]}
+    - {flags: [-c, --characters]}
+    - {flags: [-b, --bytes]}
+  positionals: [{name: paths, nargs: "*"}]
+
+tr:
+  options:
+    - {flags: [-d, --delete], type: bool}
+    - {flags: [-s, --squeeze-repeats], type: bool}
+    - {flags: [-c, -C, --complement], dest: complement, type: bool}
+  positionals: [{name: sets, nargs: "*"}]
+
+md5sum:
+  aliases: [sha1sum, sha256sum]
+  options:
+    - {flags: [-c, --check], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+basename:
+  options:
+    - {flags: [-s, --suffix]}
+    - {flags: [-a, --multiple], type: bool}
+  positionals: [{name: names, nargs: "*"}]
+
+dirname:
+  positionals: [{name: names, nargs: "*"}]
+
+readlink:
+  options:
+    - {flags: [-f, --canonicalize], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+gzip:
+  aliases: [gunzip]
+  options:
+    - {flags: [-d, --decompress], type: bool}
+    - {flags: [-c, --stdout], type: bool}
+    - {flags: [-k, --keep], type: bool}
+    - {flags: [-f, --force], type: bool}
+    - {flags: [-r, --recursive], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+diff:
+  options:
+    - {flags: [-u, --unified], type: bool}
+    - {flags: [-r, --recursive], type: bool}
+    - {flags: [-q, --brief], type: bool}
   positionals: [{name: paths, nargs: "*"}]
