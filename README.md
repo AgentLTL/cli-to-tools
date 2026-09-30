@@ -44,7 +44,8 @@ Each `ToolCall` has `name`, `args`, `id` and `meta`. `to_dict()` returns AgentLT
 |---|---|
 | `command`, `source`, `index` | the full command line, this command's text, its position |
 | `operator` | connector to the previous call: `;` `&&` `\|\|` `\|` `$()` `wrap` or `None` |
-| `conditional` | `True` if the call may be skipped at run time (right-hand side of `&&` / `\|\|`) |
+| `conditional` | `True` if the call may be skipped at run time (after `&&` / `\|\|`, inside `if` / `case`, a loop body that may run zero times) |
+| `repeated` | `True` if the call sits in a loop that could not be unrolled: listed once, may run any number of times |
 | `pipeline`, `depth` | pipeline id; nesting depth (subshell, substitution, wrapper) |
 | `wrapper` | the wrapper this call runs under (`sudo`, `xargs`, `bash`, `find`, `python -m`) |
 | `redirects`, `env` | `[{op, target, fd?}]` and `VAR=value` prefixes |
@@ -52,6 +53,19 @@ Each `ToolCall` has `name`, `args`, `id` and `meta`. `to_dict()` returns AgentLT
 | `spec_matched` | `False` if there was no spec or the spec did not fully cover the argv |
 
 Conditional chains are over-approximated: every command that *could* run is emitted.
+
+### Control flow
+
+| construct | translation |
+|---|---|
+| `for x in a b c`, `{1..5}`, `x{a,b}` (literal list, up to 64 values) | **unrolled exactly**: the body is emitted once per value with `$x` / `${x}` substituted |
+| `for x in *.py`, `in $(ls)`, `in $LIST`, `for ((...))`, `while`, `until` | body listed **once**, flagged `conditional` and `repeated`; the loop variable stays a dynamic argument |
+| `if` / `elif` / `else`, `case` | conditions, then **every** branch, flagged `conditional` |
+
+The second and third rows are over-approximations. They are sound for constraints on names and
+order ("never call X", `Before`), but not for counts (`CalledNTimes`) or exact argument values,
+because the number of iterations and the run-time values are unknown. `Translator(strict=True)`
+rejects those constructs instead; literal `for` loops are exact and stay allowed.
 
 ### Wrappers
 
@@ -67,10 +81,10 @@ restrict them in your constraints if that matters.
 
 ### Fail closed
 
-`translate()` raises `TranslationError` instead of guessing on: syntax errors, loops, `if`,
-`case`, function definitions, background jobs (`&`), `eval` / `source` / `.`, a non-static command
-name (`$CMD args`), a dynamic `bash -c "$X"`, and a shell reading its script from stdin
-(`curl ... | sh`).
+`translate()` raises `TranslationError` instead of guessing on: syntax errors, function
+definitions, background jobs (`&`), `eval` / `source` / `.`, a non-static command name
+(`$CMD args`, including a loop variable that cannot be resolved), a dynamic `bash -c "$X"`, and a
+shell reading its script from stdin (`curl ... | sh`).
 
 ## Specs
 

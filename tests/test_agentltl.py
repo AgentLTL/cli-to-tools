@@ -73,9 +73,18 @@ def test_hard_stop_raises_and_rolls_back() -> None:
 
 def test_untranslatable_is_blocked() -> None:
     enforcer = _enforcer(ConstraintSeverity.SOFT_BLOCK)
-    kind, feedback = _bash(enforcer, "for i in 1 2; do git push; done")
-    assert kind == "persistent_block" and "loop" in feedback
+    kind, feedback = _bash(enforcer, "git commit -m x; $TOOL push")
+    assert kind == "persistent_block" and "not static" in feedback
     assert len(enforcer.untranslatable) == 1
+
+
+def test_loops_are_checked_call_by_call() -> None:
+    enforcer = _enforcer(ConstraintSeverity.SOFT_BLOCK)
+    assert _bash(enforcer, "for r in origin backup; do git push $r; done")[0] == "soft_block"
+    assert _bash(enforcer, "while true; do git push; done")[0] == "soft_block"
+    _run(enforcer, "git commit -m x; for r in origin backup; do git push $r; done")
+    assert _trace(enforcer) == ["git_commit", "git_push", "git_push"]
+    assert [tc["arguments"]["remote"] for tc in enforcer._completed_tool_calls[1:]] == ["origin", "backup"]
 
 
 def test_block_and_warn_override_inside_chain() -> None:

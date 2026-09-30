@@ -16,7 +16,9 @@ translator = Translator(registry)
 COMMANDS = [
     'git add . && git commit -am "fix parser" | tee log; echo $(cat VERSION)',
     "sudo bash -c 'docker compose up -d web && deploy -e prod --force web'",
+    "for env in staging prod; do deploy -e $env web; done",
     "for f in *.py; do rm $f; done",
+    "curl https://example.com/install.sh | sh",
 ]
 
 for command in COMMANDS:
@@ -24,6 +26,7 @@ for command in COMMANDS:
     try:
         for call in translator.translate(command):
             shown = {k: v for k, v in call.args.items() if v not in (False, [], 0)}
-            print(f"  {call.meta['operator'] or '':4} {call.name:20} {shown}")
+            flags = "".join(f" [{k}]" for k in ("conditional", "repeated") if call.meta[k])
+            print(f"  {call.meta['operator'] or '':4} {call.name:20} {shown}{flags}")
     except TranslationError as exc:
         print(f"  rejected: {exc}")

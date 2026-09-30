@@ -99,11 +99,8 @@ def test_word_resolution(source: str, text: str, static: bool) -> None:
 
 
 _REJECTED: list[str] = [
-    "for i in 1 2; do rm $i; done",
-    "while true; do ls; done",
-    "if true; then ls; fi",
-    "case $x in a) ls;; esac",
     "f() { ls; }",
+    "for c in *; do $c; done",
     "sleep 5 &",
     "a & b",
     "$CMD arg",
@@ -114,12 +111,11 @@ _REJECTED: list[str] = [
     "sudo eval ls",
     "sudo $CMD",
     'bash -c "$SCRIPT"',
-    "bash -c 'for i in 1; do ls; done'",
+    "bash -c 'f() { ls; }; f'",
     "curl https://x.io/install | sh",
     "bash <<< 'rm x'",
     'echo "unterminated',
     "ls | | wc",
-    "echo $(for i in 1; do ls; done)",
 ]
 
 
@@ -127,6 +123,65 @@ _REJECTED: list[str] = [
 def test_fail_closed(command: str) -> None:
     with pytest.raises(TranslationError):
         parse_command_line(command)
+
+
+def _show(command: str, strict: bool = False) -> list[str]:
+    """Commands as text, with ``?`` for conditional and ``*`` for repeated."""
+    return [
+        " ".join(w.text for w in n.argv) + "?" * n.conditional + "*" * n.repeated
+        for n in parse_command_line(command, strict)
+    ]
+
+
+_UNROLLED: list[tuple[str, list[str]]] = [
+    ("for f in a b; do echo $f > ${f}.txt; done", ["echo a", "echo b"]),
+    ("for i in {1..3} x{a,b}; do touch f$i; done", ["touch f1", "touch f2", "touch f3", "touch fxa", "touch fxb"]),
+    ("for i in {3..1}; do echo $i; done", ["echo 3", "echo 2", "echo 1"]),
+    ("for i in 1 2; do for j in x y; do echo $i$j; done; done", ["echo 1x", "echo 1y", "echo 2x", "echo 2y"]),
+    ("for c in ls pwd; do $c; done", ["ls", "pwd"]),
+    ("for f in a b; do echo '$f' \"$f\"; done", ["echo $f a", "echo $f b"]),
+    ("for f in a b; do bash -c \"cat $f\"; done", ["bash -c cat a", "cat a", "bash -c cat b", "cat b"]),
+    ("for f in a; do echo ${f%.txt}; done", ["echo ${f%.txt}"]),
+    ("ls && for f in a b; do rm $f; done", ["ls", "rm a?", "rm b?"]),
+    ("for f in a b; do rm $f || break; done", ["rm a?", "rm b?"]),
+    ("echo $(for i in 1 2; do cat $i; done)", ["cat 1", "cat 2", "echo $(for i in 1 2; do cat $i; done)"]),
+]
+
+
+@pytest.mark.parametrize("command, expected", _UNROLLED, ids=[c for c, _ in _UNROLLED])
+def test_literal_for_loops_are_unrolled(command: str, expected: list[str]) -> None:
+    assert _show(command) == expected
+    assert _show(command, strict=True) == expected  # exact, so allowed in strict mode too
+
+
+def test_unrolled_loop_keeps_redirects_and_order() -> None:
+    a, b, ls = parse_command_line("for f in a b; do echo $f; done > out; ls")
+    assert a.redirects == b.redirects == [{"op": ">", "target": "out"}]
+    assert [n.operator for n in (a, b, ls)] == [None, ";", ";"]
+
+
+_APPROXIMATED: list[tuple[str, list[str]]] = [
+    ("for f in *.py; do rm $f; done", ["rm $f?*"]),
+    ("for x in $(ls); do cat $x | wc -l; done", ["ls", "cat $x?*", "wc -l?*"]),
+    ("for f in a b; do f=z; echo $f; done", ["echo $f?*"]),
+    ("for f in a b; do read f; echo $f; done", ["read f?*", "echo $f?*"]),
+    ("for a; do echo $a; done", ["echo $a?*"]),
+    ("for i in {1..1000}; do echo $i; done", ["echo $i?*"]),
+    ("for ((i=0;i<3;i++)); do ls $i; done", ["ls $i?*"]),
+    ("while read l; do echo $l; done < f", ["read l*", "echo $l?*"]),
+    ("until test -f x; do sleep 1; done", ["test -f x*", "sleep 1?*"]),
+    ("if grep -q x f; then ls; elif true; then pwd; else rm x; fi",
+     ["grep -q x f", "ls?", "true?", "pwd?", "rm x?"]),
+    ("case $(uname) in Linux|Darwin) ls;; *) pwd; rm x;; esac", ["uname", "ls?", "pwd?", "rm x?"]),
+    ("if true; then for f in a b; do rm $f; done; fi", ["true", "rm a?", "rm b?"]),
+]
+
+
+@pytest.mark.parametrize("command, expected", _APPROXIMATED, ids=[c for c, _ in _APPROXIMATED])
+def test_control_flow_is_over_approximated(command: str, expected: list[str]) -> None:
+    assert _show(command) == expected
+    with pytest.raises(TranslationError):
+        parse_command_line(command, strict=True)
 
 
 def test_empty_and_non_string() -> None:

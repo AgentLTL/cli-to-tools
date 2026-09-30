@@ -26,10 +26,14 @@ class Translator:
 
     Args:
         registry: Command specs to use. Defaults to all bundled packs.
+        strict: Reject control flow that can only be over-approximated (``if``,
+            ``case``, ``while``, ``for`` over a run-time list) instead of listing
+            its commands once, flagged ``conditional`` / ``repeated``.
     """
 
-    def __init__(self, registry: Optional[SpecRegistry] = None) -> None:
+    def __init__(self, registry: Optional[SpecRegistry] = None, strict: bool = False) -> None:
         self.registry = registry if registry is not None else SpecRegistry()
+        self.strict = strict
 
     def translate(self, command: str) -> List[ToolCall]:
         """Return one :class:`ToolCall` per simple command, in execution order.
@@ -40,7 +44,7 @@ class Translator:
         batch = uuid.uuid4().hex[:8]
         return [
             self._call(node, command, f"cli_{batch}_{i}", i)
-            for i, node in enumerate(parse_command_line(command))
+            for i, node in enumerate(parse_command_line(command, self.strict))
         ]
 
     def _call(self, node: CommandNode, command: str, call_id: str, index: int) -> ToolCall:
@@ -58,6 +62,7 @@ class Translator:
             "operator": node.operator,
             "pipeline": node.pipeline,
             "conditional": node.conditional,
+            "repeated": node.repeated,
             "depth": node.depth,
             "wrapper": node.wrapper,
             "redirects": node.redirects,

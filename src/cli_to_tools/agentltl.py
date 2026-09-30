@@ -101,7 +101,7 @@ class CliConstraintEnforcer(ConstraintEnforcer):
                 "[COMMAND REJECTED]\nThe command line could not be analysed and was NOT executed.\n"
                 f"Reason: {exc}\n"
                 "Rewrite it as plain commands chained with ;, &&, || or | "
-                "(no loops, eval, background jobs or dynamic command names)."
+                "(no eval, background jobs, function definitions or dynamic command names)."
             ))
 
         retry = command == self._blocked_command

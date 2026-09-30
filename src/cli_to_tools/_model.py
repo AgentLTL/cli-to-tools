@@ -47,6 +47,9 @@ class CommandNode:
     env: Dict[str, str] = field(default_factory=dict)
     wrapper: Optional[str] = None
     """Name of the wrapper command (``sudo``, ``xargs``, ``bash -c`` ...) this one runs under."""
+    repeated: bool = False
+    """True when the command sits in a loop that could not be unrolled: it is listed once
+    but may run any number of times, with arguments only known at run time."""
 
 
 @dataclass

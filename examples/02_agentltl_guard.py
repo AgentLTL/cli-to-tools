@@ -33,7 +33,8 @@ enforcer = CliConstraintEnforcer(
 COMMANDS = [
     "git push",
     "git push && git commit -m x",
-    "for i in 1 2; do rm $i; done",
+    "for r in origin backup; do git push $r; done",
+    "git commit -m wip & git push",
     "git add . && git commit -m x && git push",
     "sudo bash -c 'git push --force'",
 ]

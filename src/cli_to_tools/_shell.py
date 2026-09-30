@@ -31,17 +31,14 @@ _PARSER = Parser(Language(tree_sitter_bash.language()))
 # ── Node classes ──────────────────────────────────────────────────────────────
 
 _UNSUPPORTED = {
-    "for_statement": "loop",
-    "c_style_for_statement": "loop",
-    "while_statement": "loop",
-    "if_statement": "if statement",
-    "case_statement": "case statement",
     "function_definition": "function definition",
 }
+_LOOPS = {"for_statement", "c_style_for_statement", "while_statement"}
+_CONTROL = {*_LOOPS, "if_statement", "case_statement"}
 _STATEMENTS = {
     "command", "list", "pipeline", "subshell", "compound_statement", "negated_command",
     "redirected_statement", "variable_assignment", "variable_assignments",
-    "declaration_command", "unset_command", "test_command", *_UNSUPPORTED,
+    "declaration_command", "unset_command", "test_command", *_CONTROL, *_UNSUPPORTED,
 }
 _SUBSTITUTIONS = {"command_substitution", "process_substitution"}
 _REDIRECTS = {"file_redirect", "heredoc_redirect", "herestring_redirect"}
@@ -56,6 +53,13 @@ _FIND_EXEC = {"-exec", "-execdir", "-ok", "-okdir"}
 _GLOB = re.compile(r"(?<!\\)[*?\[]")
 _BRACE = re.compile(r"\{[^{}]*(,|\.\.)[^{}]*\}")
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+# Loop values that can be pasted into the loop body without changing how it parses.
+_SAFE_VALUE = r"[A-Za-z0-9_./:@%+=-]+"
+_BRACE_LIST = re.compile(rf"({_SAFE_VALUE})?\{{({_SAFE_VALUE}(?:,{_SAFE_VALUE})+)\}}({_SAFE_VALUE})?")
+_BRACE_RANGE = re.compile(rf"({_SAFE_VALUE})?\{{(-?\d+)\.\.(-?\d+)\}}({_SAFE_VALUE})?")
+_MAX_UNROLL = 64
+_LOOP_EXITS = {"break", "continue"}
 
 
 # ── Wrapper commands ──────────────────────────────────────────────────────────
@@ -178,9 +182,11 @@ def _resolve_string(node: Any) -> Word:
 class _Walker:
     """Walks a bash parse tree and collects simple commands in execution order."""
 
-    def __init__(self) -> None:
+    def __init__(self, strict: bool = False) -> None:
         self.out: List[CommandNode] = []
+        self.strict = strict
         self._pipelines = 0
+        self._repeated = 0  # > 0 while inside a loop that could not be unrolled
 
     def _new_pipeline(self) -> int:
         self._pipelines += 1
@@ -221,10 +227,98 @@ class _Walker:
             self.substitutions(node, depth)
         elif kind in ("declaration_command", "unset_command", "test_command"):
             self.builtin(node, op, cond, depth, pipe)
+        elif kind == "for_statement":
+            self.for_loop(node, op, cond, depth, pipe)
+        elif kind in _LOOPS:
+            self.loop_once(node, op, cond, depth, pipe)
+        elif kind == "if_statement":
+            self._approximate("if statement", node)
+            self.branch(node, op, cond, depth, pipe, in_body=False)
+        elif kind == "case_statement":
+            self._approximate("case statement", node)
+            self.substitutions(node, depth)
+            for item in node.children:
+                if item.type == "case_item":
+                    self.statements(
+                        [c for c in item.children if c.type in _STATEMENTS], ";", True, depth, pipe)
         elif kind in _UNSUPPORTED:
             raise TranslationError(f"{_UNSUPPORTED[kind]} is not supported", _text(node))
         else:
             raise TranslationError(f"unsupported shell construct '{kind}'", _text(node))
+
+    # ── Control flow ──────────────────────────────────────────────────────────
+
+    def _approximate(self, what: str, node: Any) -> None:
+        """Gate for constructs that are listed as an over-approximation of what runs."""
+        if self.strict:
+            raise TranslationError(f"{what} cannot be expanded statically (strict mode)", _text(node))
+
+    def branch(
+        self, node: Any, op: Optional[str], cond: bool, depth: int, pipe: Optional[int],
+        in_body: bool,
+    ) -> None:
+        """Visit an ``if`` / ``elif`` / ``else``: conditions, then every branch as conditional."""
+        first = True
+        for child in node.children:
+            if child.type == "then":
+                in_body = True
+            elif child.type == "elif_clause":
+                self.branch(child, ";", True, depth, pipe, in_body=False)
+            elif child.type == "else_clause":
+                self.branch(child, ";", True, depth, pipe, in_body=True)
+            elif child.is_named and child.type != "comment":
+                self.visit(child, op if first else ";", cond or in_body, depth, pipe)
+                first = False
+
+    def loop_once(
+        self, node: Any, op: Optional[str], cond: bool, depth: int, pipe: Optional[int],
+    ) -> None:
+        """List a loop's condition and body once, flagged ``repeated`` (domain unknown)."""
+        self._approximate("loop", node)
+        self._repeated += 1
+        try:
+            first = True
+            for child in node.children:
+                if child.type in ("do_group", "compound_statement"):
+                    self.statements(child.children, op if first else ";", True, depth, pipe)
+                elif child.type in _STATEMENTS:
+                    self.visit(child, op if first else ";", cond, depth, pipe)
+                else:
+                    # A `for` list (`in $(ls)`) is evaluated once, before the loop.
+                    self._repeated -= 1
+                    self.substitutions(child, depth, include_self=True)
+                    self._repeated += 1
+                    continue
+                first = False
+        finally:
+            self._repeated -= 1
+
+    def for_loop(
+        self, node: Any, op: Optional[str], cond: bool, depth: int, pipe: Optional[int],
+    ) -> None:
+        """Unroll ``for x in <literal list>``; fall back to :meth:`loop_once` otherwise."""
+        var = next(_text(c) for c in node.children if c.type == "variable_name")
+        body = next(c for c in node.children if c.type == "do_group")
+        types = [c.type for c in node.children]
+        values = node.children[types.index("in") + 1:types.index("do_group")] if "in" in types else None
+        domain = _loop_domain([v for v in values if v.is_named]) if values is not None else None
+        if domain is None or len(domain) > _MAX_UNROLL or _rebinds(body, var):
+            return self.loop_once(node, op, cond, depth, pipe)
+
+        # `break` / `continue` can cut an iteration short: later calls become conditional.
+        exits = _has_command(body, _LOOP_EXITS)
+        start, stop = body.children[0].end_byte, body.children[-1].start_byte
+        spans = sorted(_references(body, var))
+        for i, value in enumerate(domain):
+            source, pos = b"", start
+            for a, b in spans:
+                source += body.text[pos - body.start_byte:a - body.start_byte] + value.encode()
+                pos = b
+            source += body.text[pos - body.start_byte:stop - body.start_byte]
+            root = _PARSER.parse(source).root_node
+            if root.has_error:
+                raise TranslationError("loop body cannot be expanded", _text(node))
+            self.statements(root.children, op if i == 0 else ";", cond or exits, depth, pipe)
 
     def pipeline(self, node: Any, op: Optional[str], cond: bool, depth: int, pipe: int) -> None:
         first = True
@@ -233,9 +327,9 @@ class _Walker:
                 self.visit(child, op if first else "|", cond, depth, pipe)
                 first = False
 
-    def substitutions(self, node: Any, depth: int) -> None:
+    def substitutions(self, node: Any, depth: int, include_self: bool = False) -> None:
         """Emit the commands of every ``$(...)`` / ``<(...)`` nested in *node*."""
-        for child in node.children:
+        for child in ([node] if include_self else node.children):
             if child.type in _SUBSTITUTIONS:
                 self.statements(child.children, "$()", False, depth + 1, None)
             elif child.type not in _STATEMENTS:
@@ -284,7 +378,8 @@ class _Walker:
                 body = child
                 self.visit(child, op, cond, depth, pipe)
         redirects = [self.redirect(c) for c in nodes]
-        targets = self.out[start:] if body is not None and body.type in _GROUPS else self.out[start:][-1:]
+        whole = body is not None and body.type in (_GROUPS | _CONTROL)
+        targets = self.out[start:] if whole else self.out[start:][-1:]
         for cmd in targets:
             cmd.redirects.extend(redirects)
         for child in nodes:
@@ -303,7 +398,8 @@ class _Walker:
         for child in rest:
             text = _text(child)
             argv.append(Word(text, not re.search(r"[$`]", text)))
-        self.out.append(CommandNode(argv, _text(node), op, pipe, cond, depth))
+        self.out.append(
+            CommandNode(argv, _text(node), op, pipe, cond, depth, repeated=self._repeated > 0))
 
     def command(
         self, node: Any, op: Optional[str], cond: bool, depth: int, pipe: Optional[int],
@@ -326,7 +422,8 @@ class _Walker:
                 argv.append(_resolve(child))
         if not argv:
             return
-        cmd = CommandNode(argv, _text(node), op, pipe, cond, depth, redirects, env)
+        cmd = CommandNode(
+            argv, _text(node), op, pipe, cond, depth, redirects, env, repeated=self._repeated > 0)
         self.emit(cmd)
         for child in tails:
             self.heredoc_tail(child, cond, depth)
@@ -339,6 +436,8 @@ class _Walker:
         name = os.path.basename(head.text)
         if name in _FORBIDDEN:
             raise TranslationError(f"'{name}' executes text that cannot be analysed", cmd.source)
+        if name in _LOOP_EXITS:
+            return  # loop control, not a call; its effect is the `conditional` flag
         self.out.append(cmd)
         args = cmd.argv[1:]
 
@@ -393,21 +492,79 @@ class _Walker:
     def _wrapped(self, argv: List[Word], parent: CommandNode, wrapper: str) -> None:
         inner = CommandNode(
             argv, shlex.join(w.text for w in argv), "wrap", parent.pipeline,
-            parent.conditional, parent.depth + 1, wrapper=wrapper,
+            parent.conditional, parent.depth + 1, wrapper=wrapper, repeated=parent.repeated,
         )
         self.emit(inner)
 
     def _nested(self, script: str, parent: CommandNode, wrapper: str) -> None:
         pipelines: Dict[int, int] = {}
-        for i, inner in enumerate(parse_command_line(script)):
+        for i, inner in enumerate(parse_command_line(script, self.strict)):
             if inner.pipeline is not None:
                 inner.pipeline = pipelines.setdefault(inner.pipeline, self._new_pipeline())
             if i == 0:
                 inner.operator = "wrap"
             inner.depth += parent.depth + 1
             inner.conditional = inner.conditional or parent.conditional
+            inner.repeated = inner.repeated or parent.repeated
             inner.wrapper = inner.wrapper or wrapper
             self.out.append(inner)
+
+
+def _loop_domain(nodes: List[Any]) -> Optional[List[str]]:
+    """Values of a ``for`` list when they are all literal, else None."""
+    out: List[str] = []
+    for node in nodes:
+        raw = _text(node)
+        word = _resolve(node)
+        if word.static and re.fullmatch(_SAFE_VALUE, word.text):
+            out.append(word.text)
+        elif node.type in ("concatenation", "brace_expression") and (m := _BRACE_RANGE.fullmatch(raw)):
+            lo, hi = int(m.group(2)), int(m.group(3))
+            if abs(hi - lo) >= _MAX_UNROLL:
+                return None
+            step = 1 if hi >= lo else -1
+            out.extend(f"{m.group(1) or ''}{n}{m.group(4) or ''}" for n in range(lo, hi + step, step))
+        elif node.type == "concatenation" and (m := _BRACE_LIST.fullmatch(raw)):
+            out.extend(f"{m.group(1) or ''}{item}{m.group(3) or ''}" for item in m.group(2).split(","))
+        else:
+            return None
+    return out
+
+
+def _walk(node: Any) -> Any:
+    yield node
+    for child in node.children:
+        yield from _walk(child)
+
+
+def _references(body: Any, var: str) -> List[tuple]:
+    """Byte spans of plain ``$var`` / ``${var}`` references inside *body*."""
+    spans = []
+    for node in _walk(body):
+        kinds = [c.type for c in node.children]
+        if ((node.type == "simple_expansion" and kinds == ["$", "variable_name"])
+                or (node.type == "expansion" and kinds == ["${", "variable_name", "}"])):
+            if _text(node.children[1]) == var:
+                spans.append((node.start_byte, node.end_byte))
+    return spans
+
+
+def _rebinds(body: Any, var: str) -> bool:
+    """True if *body* assigns *var* or reuses it as an inner loop / ``read`` variable."""
+    for node in _walk(body):
+        if node.type in ("variable_assignment", "for_statement", "c_style_for_statement"):
+            if any(c.type == "variable_name" and _text(c) == var for c in _walk(node)
+                   if c.parent is not None and c.parent.type != "simple_expansion"
+                   and c.parent.type != "expansion"):
+                return True
+        if node.type == "command" and node.children and _text(node.children[0]) == "read":
+            if any(_text(c) == var for c in node.children[1:]):
+                return True
+    return False
+
+
+def _has_command(body: Any, names: set) -> bool:
+    return any(n.type == "command_name" and _text(n) in names for n in _walk(body))
 
 
 def _first_error(node: Any) -> Any:
@@ -419,11 +576,14 @@ def _first_error(node: Any) -> Any:
     return node
 
 
-def parse_command_line(source: str) -> List[CommandNode]:
+def parse_command_line(source: str, strict: bool = False) -> List[CommandNode]:
     """Parse a bash command line into its simple commands, in execution order.
 
     Args:
         source: The command line, possibly a chain (``;`` ``&&`` ``||`` ``|``).
+        strict: Reject control flow that can only be over-approximated (``if``,
+            ``case``, ``while``, ``for`` over a run-time list). ``for`` loops over
+            a literal list are unrolled exactly either way.
 
     Returns:
         One :class:`CommandNode` per simple command. Commands inside ``$(...)``
@@ -431,13 +591,13 @@ def parse_command_line(source: str) -> List[CommandNode]:
 
     Raises:
         TranslationError: On a syntax error or a construct that cannot be
-            analysed statically (loops, ``eval``, background jobs, ...).
+            analysed statically (``eval``, background jobs, function definitions, ...).
     """
     if not isinstance(source, str):
         raise TranslationError("command line must be a string", repr(source))
     root = _PARSER.parse(source.encode()).root_node
     if root.has_error:
         raise TranslationError("shell syntax error", _text(_first_error(root)))
-    walker = _Walker()
+    walker = _Walker(strict)
     walker.statements(root.children, None, False, 0, None)
     return walker.out
