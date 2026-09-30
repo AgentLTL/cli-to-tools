@@ -1,0 +1,171 @@
+# git – see shell.yaml for the schema.
+
+git:
+  options:
+    - {flags: [-C], dest: cwd}
+    - {flags: [-c], dest: config, type: list}
+    - {flags: [--no-pager], type: bool}
+  subcommands:
+    status:
+      options:
+        - {flags: [-s, --short], type: bool}
+      positionals: [{name: paths, nargs: "*"}]
+    init:
+      positionals: [{name: directory, nargs: "?"}]
+    clone:
+      options:
+        - {flags: [-b, --branch]}
+        - {flags: [--depth]}
+        - {flags: [--recursive, --recurse-submodules], dest: recursive, type: bool}
+      positionals: [{name: repository}, {name: directory, nargs: "?"}]
+    add:
+      options:
+        - {flags: [-A, --all], type: bool}
+        - {flags: [-u, --update], type: bool}
+        - {flags: [-p, --patch], type: bool}
+        - {flags: [-f, --force], type: bool}
+      positionals: [{name: paths, nargs: "*"}]
+    rm:
+      options:
+        - {flags: [-r], dest: recursive, type: bool}
+        - {flags: [-f, --force], type: bool}
+        - {flags: [--cached], type: bool}
+      positionals: [{name: paths, nargs: "*"}]
+    mv:
+      positionals: [{name: paths, nargs: "*"}]
+    commit:
+      options:
+        - {flags: [-m, --message]}
+        - {flags: [-a, --all], type: bool}
+        - {flags: [--amend], type: bool}
+        - {flags: [--no-edit], type: bool}
+        - {flags: [-n, --no-verify], type: bool}
+        - {flags: [--allow-empty], type: bool}
+        - {flags: [-s, --signoff], type: bool}
+      positionals: [{name: paths, nargs: "*"}]
+    push:
+      options:
+        - {flags: [-f, --force], type: bool}
+        - {flags: [--force-with-lease], type: bool}
+        - {flags: [-u, --set-upstream], type: bool}
+        - {flags: [-d, --delete], type: bool}
+        - {flags: [--tags], type: bool}
+        - {flags: [--all], type: bool}
+        - {flags: [-n, --dry-run], type: bool}
+        - {flags: [--no-verify], type: bool}
+      positionals: [{name: remote, nargs: "?"}, {name: refspecs, nargs: "*"}]
+    pull:
+      options:
+        - {flags: [-r, --rebase], type: bool}
+        - {flags: [--ff-only], type: bool}
+      positionals: [{name: remote, nargs: "?"}, {name: refspecs, nargs: "*"}]
+    fetch:
+      options:
+        - {flags: [--all], type: bool}
+        - {flags: [-p, --prune], type: bool}
+        - {flags: [--tags], type: bool}
+      positionals: [{name: remote, nargs: "?"}, {name: refspecs, nargs: "*"}]
+    checkout:
+      options:
+        - {flags: [-b], dest: new_branch}
+        - {flags: [-B], dest: reset_branch}
+        - {flags: [-f, --force], type: bool}
+      positionals: [{name: targets, nargs: "*"}]
+    switch:
+      options:
+        - {flags: [-c, --create]}
+        - {flags: [-C, --force-create]}
+      positionals: [{name: branch, nargs: "?"}]
+    restore:
+      options:
+        - {flags: [--staged], type: bool}
+        - {flags: [-s, --source]}
+      positionals: [{name: paths, nargs: "*"}]
+    branch:
+      options:
+        - {flags: [-d, --delete], type: bool}
+        - {flags: [-D], dest: force_delete, type: bool}
+        - {flags: [-m, --move], type: bool}
+        - {flags: [-a, --all], type: bool}
+        - {flags: [-r, --remotes], type: bool}
+      positionals: [{name: branches, nargs: "*"}]
+    merge:
+      options:
+        - {flags: [--no-ff], type: bool}
+        - {flags: [--ff-only], type: bool}
+        - {flags: [--squash], type: bool}
+        - {flags: [--abort], type: bool}
+        - {flags: [-m, --message]}
+      positionals: [{name: branches, nargs: "*"}]
+    rebase:
+      options:
+        - {flags: [-i, --interactive], type: bool}
+        - {flags: [--onto]}
+        - {flags: [--abort], type: bool}
+        - {flags: [--continue], dest: continue, type: bool}
+      positionals: [{name: targets, nargs: "*"}]
+    reset:
+      options:
+        - {flags: [--hard], type: bool}
+        - {flags: [--soft], type: bool}
+        - {flags: [--mixed], type: bool}
+      positionals: [{name: targets, nargs: "*"}]
+    revert:
+      options:
+        - {flags: [--no-edit], type: bool}
+      positionals: [{name: commits, nargs: "*"}]
+    cherry-pick:
+      positionals: [{name: commits, nargs: "*"}]
+    clean:
+      options:
+        - {flags: [-f, --force], type: bool}
+        - {flags: [-d], dest: directories, type: bool}
+        - {flags: [-x], dest: ignored, type: bool}
+        - {flags: [-n, --dry-run], type: bool}
+      positionals: [{name: paths, nargs: "*"}]
+    diff:
+      options:
+        - {flags: [--staged, --cached], dest: staged, type: bool}
+        - {flags: [--stat], type: bool}
+        - {flags: [--name-only], type: bool}
+      positionals: [{name: targets, nargs: "*"}]
+    log:
+      options:
+        - {flags: [--oneline], type: bool}
+        - {flags: [-n, --max-count]}
+        - {flags: [--graph], type: bool}
+        - {flags: [--all], type: bool}
+      positionals: [{name: targets, nargs: "*"}]
+    show:
+      positionals: [{name: objects, nargs: "*"}]
+    tag:
+      options:
+        - {flags: [-a, --annotate], type: bool}
+        - {flags: [-d, --delete], type: bool}
+        - {flags: [-m, --message]}
+        - {flags: [-f, --force], type: bool}
+      positionals: [{name: names, nargs: "*"}]
+    stash:
+      subcommands:
+        push:
+          options:
+            - {flags: [-m, --message]}
+            - {flags: [-u, --include-untracked], type: bool}
+        pop: {positionals: [{name: stash, nargs: "?"}]}
+        apply: {positionals: [{name: stash, nargs: "?"}]}
+        drop: {positionals: [{name: stash, nargs: "?"}]}
+        list: {}
+        clear: {}
+    remote:
+      options:
+        - {flags: [-v, --verbose], type: bool}
+      subcommands:
+        add: {positionals: [{name: name}, {name: url}]}
+        remove: {aliases: [rm], positionals: [{name: name}]}
+        set-url: {positionals: [{name: name}, {name: url}]}
+    config:
+      options:
+        - {flags: [--global], dest: global, type: bool}
+        - {flags: [--unset], type: bool}
+        - {flags: [-l, --list], type: bool}
+      positionals: [{name: key, nargs: "?"}, {name: value, nargs: "?"}]

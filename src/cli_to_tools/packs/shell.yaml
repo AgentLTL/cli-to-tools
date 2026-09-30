@@ -1,0 +1,208 @@
+# Classic shell / coreutils commands.
+#
+# Schema (every key optional):
+#   <executable>:
+#     tool: <tool name override>          # default: normalised command path
+#     posix: true                         # options stop at the first positional
+#     aliases: [<other executable names>]
+#     options:
+#       - {flags: [-m, --message], dest: message, type: str|bool|count|list|int}
+#     positionals:
+#       - {name: paths, nargs: "*"}
+#     subcommands: {<name>: <same schema>}
+
+ls:
+  options:
+    - {flags: [-l], dest: long, type: bool}
+    - {flags: [-a, --all], type: bool}
+    - {flags: [-h, --human-readable], type: bool}
+    - {flags: [-R, --recursive], type: bool}
+    - {flags: [-t], dest: sort_time, type: bool}
+    - {flags: [-r, --reverse], type: bool}
+    - {flags: ["-1"], dest: one_per_line, type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+cat:
+  options:
+    - {flags: [-n, --number], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+cd:
+  positionals: [{name: path, nargs: "?"}]
+
+pwd: {}
+
+echo:
+  posix: true
+  options:
+    - {flags: [-n], dest: no_newline, type: bool}
+    - {flags: [-e], dest: escapes, type: bool}
+  positionals: [{name: words, nargs: "*"}]
+
+touch:
+  positionals: [{name: paths, nargs: "*"}]
+
+mkdir:
+  options:
+    - {flags: [-p, --parents], type: bool}
+    - {flags: [-m, --mode]}
+    - {flags: [-v, --verbose], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+rmdir:
+  options:
+    - {flags: [-p, --parents], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+rm:
+  options:
+    - {flags: [-r, -R, --recursive], dest: recursive, type: bool}
+    - {flags: [-f, --force], type: bool}
+    - {flags: [-i], dest: interactive, type: bool}
+    - {flags: [-d, --dir], type: bool}
+    - {flags: [-v, --verbose], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+cp:
+  options:
+    - {flags: [-r, -R, --recursive], dest: recursive, type: bool}
+    - {flags: [-a, --archive], type: bool}
+    - {flags: [-f, --force], type: bool}
+    - {flags: [-n, --no-clobber], type: bool}
+    - {flags: [-p], dest: preserve, type: bool}
+    - {flags: [-v, --verbose], type: bool}
+  positionals: [{name: sources, nargs: "+"}, {name: destination}]
+
+mv:
+  options:
+    - {flags: [-f, --force], type: bool}
+    - {flags: [-n, --no-clobber], type: bool}
+    - {flags: [-v, --verbose], type: bool}
+  positionals: [{name: sources, nargs: "+"}, {name: destination}]
+
+ln:
+  options:
+    - {flags: [-s, --symbolic], type: bool}
+    - {flags: [-f, --force], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+chmod:
+  options:
+    - {flags: [-R, --recursive], type: bool}
+  positionals: [{name: mode}, {name: paths, nargs: "*"}]
+
+chown:
+  options:
+    - {flags: [-R, --recursive], type: bool}
+  positionals: [{name: owner}, {name: paths, nargs: "*"}]
+
+grep:
+  aliases: [egrep, fgrep]
+  options:
+    - {flags: [-r, -R, --recursive], dest: recursive, type: bool}
+    - {flags: [-i, --ignore-case], type: bool}
+    - {flags: [-n, --line-number], type: bool}
+    - {flags: [-v, --invert-match], type: bool}
+    - {flags: [-l, --files-with-matches], type: bool}
+    - {flags: [-c, --count], type: bool}
+    - {flags: [-w, --word-regexp], type: bool}
+    - {flags: [-o, --only-matching], type: bool}
+    - {flags: [-E, --extended-regexp], type: bool}
+    - {flags: [-F, --fixed-strings], type: bool}
+    - {flags: [-e, --regexp], type: list}
+    - {flags: [--include], type: list}
+    - {flags: [--exclude], type: list}
+    - {flags: [--exclude-dir], type: list}
+    - {flags: [-A, --after-context]}
+    - {flags: [-B, --before-context]}
+    - {flags: [-C, --context]}
+  positionals: [{name: pattern, nargs: "?"}, {name: paths, nargs: "*"}]
+
+find:
+  options:
+    - {flags: [-name]}
+    - {flags: [-iname]}
+    - {flags: [-path]}
+    - {flags: [-type]}
+    - {flags: [-maxdepth]}
+    - {flags: [-mindepth]}
+    - {flags: [-mtime]}
+    - {flags: [-size]}
+    - {flags: [-delete], type: bool}
+    - {flags: [-print], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+head:
+  options:
+    - {flags: [-n, --lines]}
+    - {flags: [-c, --bytes]}
+  positionals: [{name: paths, nargs: "*"}]
+
+tail:
+  options:
+    - {flags: [-n, --lines]}
+    - {flags: [-c, --bytes]}
+    - {flags: [-f, --follow], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+wc:
+  options:
+    - {flags: [-l, --lines], type: bool}
+    - {flags: [-w, --words], type: bool}
+    - {flags: [-c, --bytes], type: bool}
+    - {flags: [-m, --chars], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+sed:
+  options:
+    - {flags: [-i, --in-place], type: bool}
+    - {flags: [-n, --quiet], type: bool}
+    - {flags: [-E, -r, --regexp-extended], dest: extended, type: bool}
+    - {flags: [-e, --expression], type: list}
+  positionals: [{name: args, nargs: "*"}]
+
+sort:
+  options:
+    - {flags: [-r, --reverse], type: bool}
+    - {flags: [-n, --numeric-sort], type: bool}
+    - {flags: [-u, --unique], type: bool}
+    - {flags: [-k, --key]}
+    - {flags: [-t, --field-separator]}
+    - {flags: [-o, --output]}
+  positionals: [{name: paths, nargs: "*"}]
+
+uniq:
+  options:
+    - {flags: [-c, --count], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+tee:
+  options:
+    - {flags: [-a, --append], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+du:
+  options:
+    - {flags: [-s, --summarize], type: bool}
+    - {flags: [-h, --human-readable], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+kill:
+  options:
+    - {flags: [-s, --signal]}
+  positionals: [{name: pids, nargs: "*"}]
+
+which:
+  positionals: [{name: names, nargs: "*"}]
+
+tar:
+  options:
+    - {flags: [-x, --extract], type: bool}
+    - {flags: [-c, --create], type: bool}
+    - {flags: [-t, --list], type: bool}
+    - {flags: [-z, --gzip], type: bool}
+    - {flags: [-j, --bzip2], type: bool}
+    - {flags: [-v, --verbose], type: bool}
+    - {flags: [-f, --file]}
+    - {flags: [-C, --directory]}
+  positionals: [{name: paths, nargs: "*"}]

@@ -1,0 +1,166 @@
+# docker and docker compose – see shell.yaml for the schema.
+# `docker-compose ...` and `docker compose ...` produce the same tool names.
+
+docker-compose: &compose
+  options:
+    - {flags: [-f, --file], type: list}
+    - {flags: [-p, --project-name]}
+    - {flags: [--env-file]}
+  subcommands:
+    up:
+      options:
+        - {flags: [-d, --detach], type: bool}
+        - {flags: [--build], type: bool}
+        - {flags: [--force-recreate], type: bool}
+        - {flags: [--remove-orphans], type: bool}
+      positionals: [{name: services, nargs: "*"}]
+    down:
+      options:
+        - {flags: [-v, --volumes], type: bool}
+        - {flags: [--rmi]}
+        - {flags: [--remove-orphans], type: bool}
+    build:
+      options:
+        - {flags: [--no-cache], type: bool}
+        - {flags: [--pull], type: bool}
+      positionals: [{name: services, nargs: "*"}]
+    pull: {positionals: [{name: services, nargs: "*"}]}
+    ps:
+      options:
+        - {flags: [-a, --all], type: bool}
+    logs:
+      options:
+        - {flags: [-f, --follow], type: bool}
+        - {flags: [--tail]}
+      positionals: [{name: services, nargs: "*"}]
+    start: {positionals: [{name: services, nargs: "*"}]}
+    stop: {positionals: [{name: services, nargs: "*"}]}
+    restart: {positionals: [{name: services, nargs: "*"}]}
+    rm:
+      options:
+        - {flags: [-f, --force], type: bool}
+        - {flags: [-v, --volumes], type: bool}
+      positionals: [{name: services, nargs: "*"}]
+    exec:
+      posix: true
+      options:
+        - {flags: [-T, --no-TTY], dest: no_tty, type: bool}
+        - {flags: [-d, --detach], type: bool}
+        - {flags: [-u, --user]}
+        - {flags: [-w, --workdir]}
+        - {flags: [-e, --env], type: list}
+      positionals: [{name: service}, {name: command, nargs: "*"}]
+    run:
+      posix: true
+      options:
+        - {flags: [--rm], type: bool}
+        - {flags: [-d, --detach], type: bool}
+        - {flags: [-T, --no-TTY], dest: no_tty, type: bool}
+        - {flags: [-u, --user]}
+        - {flags: [-w, --workdir]}
+        - {flags: [-e, --env], type: list}
+        - {flags: [-v, --volume], type: list}
+        - {flags: [--entrypoint]}
+      positionals: [{name: service}, {name: command, nargs: "*"}]
+
+docker:
+  options:
+    - {flags: [-H, --host]}
+    - {flags: [--context]}
+  subcommands:
+    compose: *compose
+    run:
+      posix: true
+      options:
+        - {flags: [-d, --detach], type: bool}
+        - {flags: [-i, --interactive], type: bool}
+        - {flags: [-t, --tty], type: bool}
+        - {flags: [--rm], type: bool}
+        - {flags: [--privileged], type: bool}
+        - {flags: [--name]}
+        - {flags: [--network, --net], dest: network}
+        - {flags: [-v, --volume], type: list}
+        - {flags: [-p, --publish], type: list}
+        - {flags: [-e, --env], type: list}
+        - {flags: [--env-file], type: list}
+        - {flags: [-w, --workdir]}
+        - {flags: [-u, --user]}
+        - {flags: [--entrypoint]}
+      positionals: [{name: image}, {name: command, nargs: "*"}]
+    exec:
+      posix: true
+      options:
+        - {flags: [-d, --detach], type: bool}
+        - {flags: [-i, --interactive], type: bool}
+        - {flags: [-t, --tty], type: bool}
+        - {flags: [--privileged], type: bool}
+        - {flags: [-u, --user]}
+        - {flags: [-w, --workdir]}
+        - {flags: [-e, --env], type: list}
+      positionals: [{name: container}, {name: command, nargs: "*"}]
+    build:
+      options:
+        - {flags: [-t, --tag], type: list}
+        - {flags: [-f, --file]}
+        - {flags: [--no-cache], type: bool}
+        - {flags: [--pull], type: bool}
+        - {flags: [--build-arg], type: list}
+        - {flags: [--target]}
+      positionals: [{name: context, nargs: "?"}]
+    pull: {positionals: [{name: image}]}
+    push: {positionals: [{name: image}]}
+    tag: {positionals: [{name: source}, {name: target}]}
+    login:
+      options:
+        - {flags: [-u, --username]}
+        - {flags: [-p, --password]}
+        - {flags: [--password-stdin], type: bool}
+      positionals: [{name: server, nargs: "?"}]
+    ps:
+      options:
+        - {flags: [-a, --all], type: bool}
+        - {flags: [-q, --quiet], type: bool}
+    images:
+      options:
+        - {flags: [-a, --all], type: bool}
+        - {flags: [-q, --quiet], type: bool}
+    logs:
+      options:
+        - {flags: [-f, --follow], type: bool}
+        - {flags: [--tail]}
+      positionals: [{name: container}]
+    start: {positionals: [{name: containers, nargs: "*"}]}
+    stop: {positionals: [{name: containers, nargs: "*"}]}
+    restart: {positionals: [{name: containers, nargs: "*"}]}
+    kill: {positionals: [{name: containers, nargs: "*"}]}
+    rm:
+      options:
+        - {flags: [-f, --force], type: bool}
+        - {flags: [-v, --volumes], type: bool}
+      positionals: [{name: containers, nargs: "*"}]
+    rmi:
+      options:
+        - {flags: [-f, --force], type: bool}
+      positionals: [{name: images, nargs: "*"}]
+    cp: {positionals: [{name: source}, {name: destination}]}
+    system:
+      subcommands:
+        prune:
+          options:
+            - {flags: [-a, --all], type: bool}
+            - {flags: [-f, --force], type: bool}
+            - {flags: [--volumes], type: bool}
+        df: {}
+    volume:
+      subcommands:
+        ls: {}
+        create: {positionals: [{name: name, nargs: "?"}]}
+        rm: {positionals: [{name: volumes, nargs: "*"}]}
+        prune:
+          options:
+            - {flags: [-f, --force], type: bool}
+    network:
+      subcommands:
+        ls: {}
+        create: {positionals: [{name: name}]}
+        rm: {positionals: [{name: networks, nargs: "*"}]}

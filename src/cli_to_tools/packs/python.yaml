@@ -1,0 +1,51 @@
+# python, pip, pytest – see shell.yaml for the schema.
+# `python -m <module> ...` additionally yields the wrapped call (`python -m pip install x`
+# -> python, then pip_install).
+
+python:
+  aliases: [python3]
+  posix: true
+  options:
+    - {flags: [-m], dest: module}
+    - {flags: [-c], dest: code}
+    - {flags: [-u], dest: unbuffered, type: bool}
+    - {flags: [-V, --version], type: bool}
+  positionals: [{name: script, nargs: "?"}, {name: script_args, nargs: "*"}]
+
+pip:
+  aliases: [pip3]
+  subcommands:
+    install:
+      options:
+        - {flags: [-r, --requirement], type: list}
+        - {flags: [-e, --editable], type: list}
+        - {flags: [-U, --upgrade], type: bool}
+        - {flags: [--user], type: bool}
+        - {flags: [--pre], type: bool}
+        - {flags: [--no-deps], type: bool}
+        - {flags: [-q, --quiet], type: bool}
+        - {flags: [-i, --index-url]}
+        - {flags: [--extra-index-url], type: list}
+      positionals: [{name: packages, nargs: "*"}]
+    uninstall:
+      options:
+        - {flags: [-y, --yes], type: bool}
+        - {flags: [-r, --requirement], type: list}
+      positionals: [{name: packages, nargs: "*"}]
+    list: {}
+    freeze: {}
+    show: {positionals: [{name: packages, nargs: "*"}]}
+
+pytest:
+  options:
+    - {flags: [-x, --exitfirst], type: bool}
+    - {flags: [-v, --verbose], type: count}
+    - {flags: [-q, --quiet], type: bool}
+    - {flags: [-s], dest: no_capture, type: bool}
+    - {flags: [-k], dest: keyword}
+    - {flags: [-m], dest: marker}
+    - {flags: [-n], dest: workers}
+    - {flags: [--lf, --last-failed], dest: last_failed, type: bool}
+    - {flags: [--maxfail]}
+    - {flags: [--cov], type: list}
+  positionals: [{name: paths, nargs: "*"}]

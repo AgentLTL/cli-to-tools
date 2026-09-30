@@ -1,0 +1,60 @@
+# curl, wget, ssh, scp, rsync – see shell.yaml for the schema.
+
+curl:
+  options:
+    - {flags: [-X, --request]}
+    - {flags: [-H, --header], type: list}
+    - {flags: [-d, --data], type: list}
+    - {flags: [--data-raw], type: list}
+    - {flags: [--data-binary], type: list}
+    - {flags: [-F, --form], type: list}
+    - {flags: [-o, --output]}
+    - {flags: [-O, --remote-name], type: bool}
+    - {flags: [-u, --user]}
+    - {flags: [-L, --location], type: bool}
+    - {flags: [-s, --silent], type: bool}
+    - {flags: [-S, --show-error], type: bool}
+    - {flags: [-f, --fail], type: bool}
+    - {flags: [-k, --insecure], type: bool}
+    - {flags: [-I, --head], type: bool}
+    - {flags: [-v, --verbose], type: bool}
+  positionals: [{name: urls, nargs: "*"}]
+
+wget:
+  options:
+    - {flags: [-O, --output-document]}
+    - {flags: [-P, --directory-prefix]}
+    - {flags: [-q, --quiet], type: bool}
+    - {flags: [-c, --continue], dest: continue, type: bool}
+    - {flags: [--no-check-certificate], type: bool}
+  positionals: [{name: urls, nargs: "*"}]
+
+ssh:
+  posix: true
+  options:
+    - {flags: [-p], dest: port}
+    - {flags: [-i], dest: identity}
+    - {flags: [-l], dest: login}
+    - {flags: [-o], dest: option, type: list}
+    - {flags: [-A], dest: forward_agent, type: bool}
+    - {flags: [-t], dest: tty, type: bool}
+  positionals: [{name: host}, {name: command, nargs: "*"}]
+
+scp:
+  options:
+    - {flags: [-r], dest: recursive, type: bool}
+    - {flags: [-P], dest: port}
+    - {flags: [-i], dest: identity}
+  positionals: [{name: sources, nargs: "+"}, {name: destination}]
+
+rsync:
+  options:
+    - {flags: [-a, --archive], type: bool}
+    - {flags: [-r, --recursive], type: bool}
+    - {flags: [-v, --verbose], type: bool}
+    - {flags: [-z, --compress], type: bool}
+    - {flags: [-n, --dry-run], type: bool}
+    - {flags: [--delete], type: bool}
+    - {flags: [-e, --rsh]}
+    - {flags: [--exclude], type: list}
+  positionals: [{name: sources, nargs: "+"}, {name: destination}]
