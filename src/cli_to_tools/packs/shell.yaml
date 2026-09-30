@@ -6,7 +6,8 @@
 #     posix: true                         # options stop at the first positional
 #     aliases: [<other executable names>]
 #     options:
-#       - {flags: [-m, --message], dest: message, type: str|bool|count|list|int}
+#       - {flags: [-m, --message], dest: message, type: str|bool|count|list|int,
+#          help: <description shown in the tool schema>, choices: [<allowed values>]}
 #     positionals:
 #       - {name: paths, nargs: "*"}
 #     subcommands: {<name>: <same schema>}
@@ -122,8 +123,8 @@ find:
   options:
     - {flags: [-name]}
     - {flags: [-iname]}
-    - {flags: [-path]}
-    - {flags: [-type]}
+    - {flags: [-path], dest: path_pattern}
+    - {flags: [-type], help: "File type to match: one of 'f' (regular file), 'd' (directory), 'l' (symlink)."}
     - {flags: [-maxdepth]}
     - {flags: [-mindepth]}
     - {flags: [-mtime]}

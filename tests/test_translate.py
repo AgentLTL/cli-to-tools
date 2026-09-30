@@ -70,6 +70,25 @@ def test_invalid_spec_rejected() -> None:
         SpecRegistry(packs=["nope"])
 
 
+def test_tool_schemas() -> None:
+    schemas = {s["name"]: s for s in SpecRegistry(packs=["git", "docker"]).tool_schemas()}
+    assert {"git", "git_commit", "git_stash_pop", "docker_compose_up"} <= set(schemas)
+    props = schemas["git_commit"]["parameters"]["properties"]
+    assert props["message"]["type"] == "string" and props["all"]["type"] == "boolean"
+    assert props["paths"] == {"type": "array", "items": {"type": "string"}}
+    assert "cwd" in props  # options of the parent command are part of the arguments
+    assert schemas["git_commit"]["description"] == "The `git commit` command."
+    # a description or enum appears only where the spec states one
+    spec = CommandSpec("pick")
+    spec.add_argument("--mode", choices=["fast", "safe"], help="How to pick.")
+    assert spec.tool_schemas()[0]["parameters"]["properties"]["mode"] == {
+        "type": "string", "enum": ["fast", "safe"], "description": "How to pick."}
+    # every argument a translation produces is declared in the schema
+    for command in ("git commit -am x", "docker compose -f a.yml up -d web", "git push -f origin"):
+        (call,) = _T.translate(command)
+        assert set(call.args) <= set(schemas[call.name]["parameters"]["properties"])
+
+
 def test_packs_load() -> None:
     assert available_packs() == ["docker", "git", "network", "python", "shell"]
     assert SpecRegistry(packs=[]).get("git") is None

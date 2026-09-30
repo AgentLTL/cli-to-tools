@@ -62,6 +62,8 @@ class CommandSpec:
         self.executable = executable
         self.tool_name = tool_name or normalize_tool_name(executable)
         self.posix = posix
+        self.command = executable
+        """The command as typed, including parent commands (``git commit``)."""
         self.subcommands: Dict[str, CommandSpec] = {}
         self._parser = _Parser(prog=executable, add_help=False, allow_abbrev=False)
 
@@ -75,6 +77,8 @@ class CommandSpec:
     ) -> CommandSpec:
         """Declare a subcommand and return its spec (tool name ``<parent>_<name>``)."""
         sub = CommandSpec(name, tool_name or f"{self.tool_name}_{normalize_tool_name(name)}", posix)
+        sub.command = f"{self.command} {name}"
+        sub._parent = self
         for key in (name, *aliases):
             self.subcommands[key] = sub
         return sub
@@ -117,6 +121,48 @@ class CommandSpec:
         if extra:
             args["extra_args"] = extra
         return self.tool_name, args, not extra
+
+    def _properties(self) -> Dict[str, Dict[str, Any]]:
+        parent = getattr(self, "_parent", None)
+        props = parent._properties() if parent is not None else {}
+        for action in self._parser._actions:
+            if isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
+                schema: Dict[str, Any] = {"type": "boolean"}
+            elif isinstance(action, argparse._CountAction):
+                schema = {"type": "integer"}
+            elif isinstance(action, argparse._AppendAction) or action.nargs in ("*", "+"):
+                schema = {"type": "array", "items": {"type": "string"}}
+            else:
+                schema = {"type": "integer" if action.type is int else "string"}
+            # Only what the spec author stated. A generated filler ("-name option")
+            # would read as documentation to a constraint generator and license it to
+            # assert free-text values against a parameter that documents nothing.
+            if action.choices:
+                schema["enum"] = list(action.choices)
+            if action.help:
+                schema["description"] = action.help
+            props[action.dest] = schema
+        return props
+
+    def tool_schemas(self) -> List[Dict[str, Any]]:
+        """JSON-schema description of every tool this spec can produce.
+
+        One entry per command and subcommand, in the OpenAI function format minus
+        the ``{"type": "function"}`` envelope. Use it to tell a constraint author
+        (human or LLM) which tool names and arguments exist.
+        """
+        out = [{
+            "name": self.tool_name,
+            "description": f"The `{self.command}` command.",
+            "parameters": {"type": "object", "properties": self._properties()},
+        }]
+        seen = {self.tool_name}
+        for sub in self.subcommands.values():
+            for schema in sub.tool_schemas():
+                if schema["name"] not in seen:
+                    seen.add(schema["name"])
+                    out.append(schema)
+        return out
 
     @staticmethod
     def _clean(namespace: argparse.Namespace) -> Dict[str, Any]:
@@ -180,8 +226,9 @@ class CommandSpec:
             if kind not in _OPTION_TYPES:
                 raise ValueError(f"spec '{executable}': unknown option type '{kind}'")
             kwargs: Dict[str, Any] = {}
-            if "dest" in opt:
-                kwargs["dest"] = opt["dest"]
+            for key in ("dest", "help", "choices"):
+                if key in opt:
+                    kwargs[key] = opt[key]
             if kind == "bool":
                 kwargs["action"] = "store_true"
             elif kind == "count":
@@ -192,7 +239,7 @@ class CommandSpec:
                 kwargs["type"] = int
             spec.add_argument(*opt["flags"], **kwargs)
         for pos in data.get("positionals", []):
-            kwargs = {"nargs": pos["nargs"]} if "nargs" in pos else {}
+            kwargs = {key: pos[key] for key in ("nargs", "help", "choices") if key in pos}
             spec.add_argument(pos["name"], **kwargs)
         for name, sub in (data.get("subcommands") or {}).items():
             cls.from_dict(name, sub, _parent=spec)
@@ -221,6 +268,14 @@ class SpecRegistry:
     def get(self, executable: str) -> Optional[CommandSpec]:
         """Return the spec for *executable* (a path is reduced to its basename)."""
         return self._specs.get(os.path.basename(executable))
+
+    def tool_schemas(self) -> List[Dict[str, Any]]:
+        """JSON-schema description of every tool the registered specs can produce."""
+        out: Dict[str, Dict[str, Any]] = {}
+        for spec in self._specs.values():
+            for schema in spec.tool_schemas():
+                out.setdefault(schema["name"], schema)
+        return sorted(out.values(), key=lambda s: s["name"])
 
     def load_dict(self, data: Dict[str, Any]) -> None:
         for executable, body in data.items():

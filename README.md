@@ -117,6 +117,7 @@ deploy:
   options:
     - {flags: [-e, --env], dest: environment}
     - {flags: [--force], type: bool}          # str (default) | bool | count | list | int
+    - {flags: [--mode], choices: [fast, safe], help: "How to deploy."}   # optional, for tool schemas
   positionals:
     - {name: services, nargs: "*"}
   subcommands: {}              # nested specs, same schema -> tool "deploy_<name>"
