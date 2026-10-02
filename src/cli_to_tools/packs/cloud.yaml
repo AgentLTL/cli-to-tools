@@ -355,6 +355,8 @@ helm:
         - {flags: [--wait], type: bool}
         - {flags: [-i, --install], type: bool}
         - {flags: [--create-namespace], type: bool}
+        - {flags: [--version], help: "Chart version"}
+        - {flags: [--atomic], type: bool}
       positionals: [{name: release}, {name: chart, nargs: "?"}]
     upgrade: *helm_install
     template: *helm_install
