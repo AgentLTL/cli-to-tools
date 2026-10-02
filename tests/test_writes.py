@@ -144,3 +144,44 @@ class TestVariables:
     def test_unknown_values_stay_dynamic(self, command):
         last = parse_command_line(command)[-1]
         assert not last.argv[-1].static
+
+
+class TestGlobalOptions:
+    @pytest.mark.parametrize("command, want", [
+        ("kubectl delete pod x -n prod", {"namespace": "prod", "names": ["x"]}),
+        ("kubectl -n prod delete pod x", {"namespace": "prod", "names": ["x"]}),
+        ("kubectl get pods --context=prod -A", {"context": "prod", "all_namespaces": True}),
+        ("gh pr merge 3 -R o/r", {"repo": "o/r", "pr": "3"}),
+        ("aws s3 rm s3://b/k --profile prod", {"profile": "prod", "path": "s3://b/k"}),
+    ])
+    def test_accepted_after_the_subcommand(self, command, want):
+        ((_, args),) = _calls(command)
+        assert _subset(want, args) and "extra_args" not in args, args
+
+    def test_git_options_still_go_before_the_subcommand(self):
+        ((name, args),) = _calls("git -C d status")
+        assert name == "git_status" and args["cwd"] == "d"
+
+
+class TestExtend:
+    def test_extend_adds_to_a_bundled_spec(self):
+        from cli_to_tools import SpecRegistry
+
+        registry = SpecRegistry()
+        registry.load_dict({"kubectl": {"extend": True, "subcommands": {
+            "rollout": {"positionals": [{"name": "action"}, {"name": "resource"}]},
+            "delete": {"options": [{"flags": ["--grace-period"]}]}}}})
+        t = Translator(registry)
+        (rollout,) = t.translate("kubectl rollout restart deploy/web -n prod")
+        assert rollout.name == "kubectl_rollout" and rollout.args["action"] == "restart"
+        assert rollout.args["namespace"] == "prod"
+        (delete,) = t.translate("kubectl delete pod x --grace-period 0 -n prod")
+        assert delete.args["grace_period"] == "0" and delete.args["names"] == ["x"]
+
+    def test_without_extend_a_spec_replaces_the_bundled_one(self):
+        from cli_to_tools import SpecRegistry
+
+        registry = SpecRegistry()
+        registry.load_dict({"kubectl": {"subcommands": {"rollout": {}}}})
+        (call,) = Translator(registry).translate("kubectl delete pod x")
+        assert call.name == "kubectl_delete" and "argv" in call.args

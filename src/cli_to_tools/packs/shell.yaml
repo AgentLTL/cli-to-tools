@@ -7,10 +7,13 @@
 #     aliases: [<other executable names>]
 #     options:
 #       - {flags: [-m, --message], dest: message, type: str|bool|count|list|int,
-#          help: <description shown in the tool schema>, choices: [<allowed values>]}
+#          help: <description shown in the tool schema>, choices: [<allowed values>],
+#          global: true}                  # also accepted after any subcommand
 #     positionals:
 #       - {name: paths, nargs: "*"}
 #     subcommands: {<name>: <same schema>}
+#     extend: true                        # in a later file: add to the earlier spec of this
+#                                         # command instead of replacing it
 
 ls:
   options:

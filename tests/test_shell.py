@@ -83,7 +83,10 @@ _WORDS: list[tuple[str, str, bool]] = [
     ("$'a\\tb'", "a\tb", True),
     ("'*.py'", "*.py", True),
     ("*.py", "*.py", False),
-    ("~/x", "~/x", False),
+    ("~/x", "~/x", True),
+    ("~", "~", True),
+    ("~bob/x", "~bob/x", False),
+    ("~+/x", "~+/x", False),
     ("a{1,2}", "a{1,2}", False),
     ("{}", "{}", True),
     ('"pre $X post"', "pre $X post", False),
@@ -189,3 +192,8 @@ def test_empty_and_non_string() -> None:
     assert parse_command_line("# only a comment") == []
     with pytest.raises(TranslationError):
         parse_command_line(None)  # type: ignore[arg-type]
+
+
+def test_a_command_named_by_a_home_path_is_static() -> None:
+    (cmd,) = parse_command_line("~/.local/bin/tool --flag x")
+    assert cmd.argv[0].static and cmd.argv[0].text == "~/.local/bin/tool"

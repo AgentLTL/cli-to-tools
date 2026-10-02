@@ -3,10 +3,10 @@
 
 kubectl:
   options:
-    - {flags: [-n, --namespace]}
-    - {flags: [--context]}
-    - {flags: [--kubeconfig]}
-    - {flags: [-A, --all-namespaces], type: bool}
+    - {flags: [-n, --namespace], global: true}
+    - {flags: [--context], global: true}
+    - {flags: [--kubeconfig], global: true}
+    - {flags: [-A, --all-namespaces], type: bool, global: true}
   subcommands:
     get:
       options: [{flags: [-o, --output]}, {flags: [-l, --selector]}]
@@ -78,7 +78,7 @@ terraform:
 
 gh:
   options:
-    - {flags: [-R, --repo]}
+    - {flags: [-R, --repo], global: true}
   subcommands:
     pr:
       subcommands:
@@ -126,9 +126,9 @@ gh:
 
 aws:
   options:
-    - {flags: [--profile]}
-    - {flags: [--region]}
-    - {flags: [--output]}
+    - {flags: [--profile], global: true}
+    - {flags: [--region], global: true}
+    - {flags: [--output], global: true}
     - {flags: [--dryrun, --dry-run], dest: dry_run, type: bool}
   subcommands:
     s3:

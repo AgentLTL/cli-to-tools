@@ -130,7 +130,9 @@ def _resolve(node: Any) -> Word:
     kind = node.type
     raw = _text(node)
     if kind == "word":
-        static = not (_GLOB.search(raw) or raw.startswith("~"))
+        # `~` and `~/x` are the home directory; `~user`, `~+` and `~-` depend on the system
+        static = not (_GLOB.search(raw) or (raw.startswith("~") and raw != "~"
+                                             and not raw.startswith("~/")))
         return Word(re.sub(r"\\(.)", r"\1", raw.replace("\\\n", ""), flags=re.S), bool(static))
     if kind in ("number", "variable_name", "test_operator"):
         return Word(raw)

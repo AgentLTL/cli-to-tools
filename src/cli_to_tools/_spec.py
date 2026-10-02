@@ -22,7 +22,7 @@ import argparse
 import os
 import re
 from importlib import resources
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import yaml
 
@@ -130,6 +130,9 @@ class CommandSpec:
             if "argv" in args and not matched and len(args) == 1:
                 return name, {"argv": list(argv)}, False
             merged = {**self._clean(own), **args}
+            for key, value in self._clean(own).items():   # a global list option given twice
+                if isinstance(value, list) and isinstance(args.get(key), list) and key != "argv":
+                    merged[key] = value + args[key]
             if extra:
                 merged["extra_args"] = extra + merged.get("extra_args", [])
             return name, merged, matched and not extra
@@ -324,8 +327,13 @@ class CommandSpec:
 
     @classmethod
     def from_dict(cls, executable: str, data: Optional[Dict[str, Any]], *,
-                  _parent: Optional[CommandSpec] = None) -> CommandSpec:
-        """Build a spec from its YAML/dict form (see ``packs/*.yaml`` for the schema)."""
+                  _parent: Optional[CommandSpec] = None,
+                  _globals: Sequence[Dict[str, Any]] = ()) -> CommandSpec:
+        """Build a spec from its YAML/dict form (see ``packs/*.yaml`` for the schema).
+
+        An option with ``global: true`` is also accepted after any subcommand
+        (``kubectl delete pod x -n prod``), as kubectl, gh, helm and aws allow.
+        """
         data = data or {}
         unknown = set(data) - {"tool", "posix", "aliases", "options", "positionals", "subcommands",
                                "after_dashdash", "key_value"}
@@ -338,34 +346,69 @@ class CommandSpec:
             spec = _parent.subcommand(executable, data.get("tool"), posix, data.get("aliases", ()))
         spec.after_dashdash = data.get("after_dashdash")
         spec.key_value = bool(data.get("key_value", False))
+        own_flags = {f for opt in data.get("options", []) for f in opt.get("flags", [])}
+        inherited = [g for g in _globals if not own_flags & set(g["flags"])]
+        for opt in inherited:
+            _add_option(spec, opt, executable, inherited=True)
         for opt in data.get("options", []):
-            kind = opt.get("type", "str")
-            if kind not in _OPTION_TYPES:
-                raise ValueError(f"spec '{executable}': unknown option type '{kind}'")
-            if kind == "attached":
-                spec.add_attached(*opt["flags"], dest=opt.get("dest"))
-                continue
-            kwargs: Dict[str, Any] = {}
-            for key in ("dest", "help", "choices"):
-                if key in opt:
-                    kwargs[key] = opt[key]
-            if kind == "bool":
-                kwargs["action"] = "store_true"
-            elif kind == "count":
-                kwargs.update(action="count", default=0)
-            elif kind == "list":
-                kwargs["action"] = "append"
-            elif kind == "int":
-                kwargs["type"] = int
-            spec.add_argument(*opt["flags"], **kwargs)
+            _add_option(spec, opt, executable)
+        globals_ = [*inherited, *(o for o in data.get("options", []) if o.get("global"))]
         for pos in data.get("positionals", []):
             kwargs = {key: pos[key] for key in ("nargs", "help", "choices") if key in pos}
             spec.add_argument(pos["name"], **kwargs)
             if pos.get("unless"):
                 spec.add_unless(pos["name"], pos["unless"])
         for name, sub in (data.get("subcommands") or {}).items():
-            cls.from_dict(name, sub, _parent=spec)
+            cls.from_dict(name, sub, _parent=spec, _globals=globals_)
         return spec
+
+
+def _add_option(spec: CommandSpec, opt: Dict[str, Any], executable: str,
+                inherited: bool = False) -> None:
+    """Declare one option of the dict form. An *inherited* (global) option leaves no value
+    when absent, so it never hides the one given before the subcommand."""
+    kind = opt.get("type", "str")
+    if kind not in _OPTION_TYPES:
+        raise ValueError(f"spec '{executable}': unknown option type '{kind}'")
+    unknown = set(opt) - {"flags", "type", "dest", "help", "choices", "global"}
+    if unknown:
+        raise ValueError(f"spec '{executable}': option {opt.get('flags')}: unknown keys "
+                         f"{sorted(unknown)}")
+    if kind == "attached":
+        spec.add_attached(*opt["flags"], dest=opt.get("dest"))
+        return
+    kwargs: Dict[str, Any] = {}
+    for key in ("dest", "help", "choices"):
+        if key in opt:
+            kwargs[key] = opt[key]
+    if kind == "bool":
+        kwargs["action"] = "store_true"
+    elif kind == "count":
+        kwargs.update(action="count", default=0)
+    elif kind == "list":
+        kwargs["action"] = "append"
+    elif kind == "int":
+        kwargs["type"] = int
+    if inherited:
+        kwargs["default"] = argparse.SUPPRESS
+    spec.add_argument(*opt["flags"], **kwargs)
+
+
+def merge_spec_dicts(base: Optional[Dict[str, Any]], extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """*base* extended by *extra*: options are merged by flag (an option of *extra* replaces
+    the one of *base* sharing a flag), subcommands recursively, other keys replaced."""
+    base, extra = dict(base or {}), dict(extra or {})
+    out = {**base, **{k: v for k, v in extra.items() if k not in ("options", "subcommands")}}
+    if "options" in extra:
+        flags = {f for opt in extra["options"] for f in opt.get("flags", [])}
+        out["options"] = [o for o in base.get("options", [])
+                          if not flags & set(o.get("flags", []))] + list(extra["options"])
+    if "subcommands" in extra:
+        subs = dict(base.get("subcommands") or {})
+        for name, body in (extra["subcommands"] or {}).items():
+            subs[name] = merge_spec_dicts(subs.get(name), body)
+        out["subcommands"] = subs
+    return out
 
 
 class SpecRegistry:
@@ -378,6 +421,7 @@ class SpecRegistry:
 
     def __init__(self, packs: Optional[Iterable[str]] = None) -> None:
         self._specs: Dict[str, CommandSpec] = {}
+        self._raw: Dict[str, Dict[str, Any]] = {}
         for pack in (available_packs() if packs is None else packs):
             self.load_pack(pack)
 
@@ -399,9 +443,19 @@ class SpecRegistry:
                 out.setdefault(schema["name"], schema)
         return sorted(out.values(), key=lambda s: s["name"])
 
-    def load_dict(self, data: Dict[str, Any]) -> None:
+    def load_dict(self, data: Dict[str, Any], extend: bool = False) -> None:
+        """Register the specs of *data*, replacing earlier specs for the same executables.
+
+        An entry with ``extend: true`` (or every entry, with *extend*, unless it says
+        ``extend: false``) is merged into the earlier spec instead (see :func:`merge_spec_dicts`),
+        so adding one subcommand to ``kubectl`` keeps the bundled ones.
+        """
         for executable, body in data.items():
-            self.register(CommandSpec.from_dict(executable, body), (body or {}).get("aliases", ()))
+            body = dict(body or {})
+            if body.pop("extend", extend) and executable in self._raw:
+                body = merge_spec_dicts(self._raw[executable], body)
+            self._raw[executable] = body
+            self.register(CommandSpec.from_dict(executable, body), body.get("aliases", ()))
 
     def load_yaml(self, path: str) -> None:
         """Load specs from a YAML file; later definitions override earlier ones."""

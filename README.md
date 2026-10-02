@@ -118,10 +118,20 @@ deploy:
     - {flags: [-e, --env], dest: environment}
     - {flags: [--force], type: bool}          # str (default) | bool | count | list | int
     - {flags: [--mode], choices: [fast, safe], help: "How to deploy."}   # optional, for tool schemas
+    - {flags: [-n, --namespace], global: true}   # also accepted after a subcommand
   positionals:
     - {name: services, nargs: "*"}
   subcommands: {}              # nested specs, same schema -> tool "deploy_<name>"
+
+kubectl:
+  extend: true                 # add to the bundled kubectl spec instead of replacing it
+  subcommands:
+    rollout: {positionals: [{name: action}, {name: resource}]}
 ```
+
+A later spec for the same command replaces the earlier one, unless it says `extend: true`:
+then its options are merged by flag and its subcommands one by one.
+`registry.load_dict(specs, extend=True)` extends by default.
 
 Boolean flags are always present in the arguments (`False` when absent), so both
 `CalledWith("rm", {"recursive": True})` and `CalledWith("git_push", {"force": False})` work.
