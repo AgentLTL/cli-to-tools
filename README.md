@@ -10,7 +10,7 @@ from cli_to_tools import Translator
 for call in Translator().translate('git add . && git commit -am "fix" | tee log; echo $(cat VERSION)'):
     print(call.name, call.args)
 # git_add     {"paths": ["."], ...}
-# git_commit  {"message": "fix", "all": True, ...}
+# git_commit  {"message": ["fix"], "all": True, ...}
 # tee         {"paths": ["log"], ...}
 # cat         {"paths": ["VERSION"], ...}     <- runs before the echo that consumes it
 # echo        {"words": ["$(cat VERSION)"], ...}

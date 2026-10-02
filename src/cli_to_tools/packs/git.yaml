@@ -35,7 +35,13 @@ git:
       positionals: [{name: paths, nargs: "*"}]
     commit:
       options:
-        - {flags: [-m, --message]}
+        - {flags: [-m, --message], type: list, help: "Each -m is one paragraph of the message"}
+        - {flags: [-F, --file], dest: message_file}
+        - {flags: [--author]}
+        - {flags: [--date]}
+        - {flags: [-q, --quiet], type: bool}
+        - {flags: [-v, --verbose], type: bool}
+        - {flags: [-S, --gpg-sign], dest: gpg_sign, type: bool}
         - {flags: [-a, --all], type: bool}
         - {flags: [--amend], type: bool}
         - {flags: [--no-edit], type: bool}

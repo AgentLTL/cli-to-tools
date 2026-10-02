@@ -76,6 +76,12 @@ _CASES = [
                                             ("rm", {"paths": ["{}"]})]),
     ("find src -exec sed -i s/a/b/ {} ';'", [("find", {"paths": ["src"]}),
                                              ("sed", {"in_place": True, "paths": ["{}"]})]),
+    # git commit: every -m is kept, bundled -qm parses, --author and -F are named
+    ("git commit -qm 'a $HOME b'", [("git_commit", {"quiet": True, "message": ["a $HOME b"],
+                                                    "paths": []})]),
+    ("git commit -m x -m 'Co-Authored-By: y'", [("git_commit", {"message": ["x", "Co-Authored-By: y"]})]),
+    ("git commit --author='A <a@b>' -F msg.txt", [("git_commit", {"author": "A <a@b>",
+                                                                  "message_file": "msg.txt"})]),
     # cloud CLIs
     ("kubectl -n prod delete pod web-1", [("kubectl_delete", {"namespace": "prod", "resource": "pod",
                                                               "names": ["web-1"]})]),

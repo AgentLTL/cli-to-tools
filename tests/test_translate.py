@@ -74,7 +74,7 @@ def test_tool_schemas() -> None:
     schemas = {s["name"]: s for s in SpecRegistry(packs=["git", "docker"]).tool_schemas()}
     assert {"git", "git_commit", "git_stash_pop", "docker_compose_up"} <= set(schemas)
     props = schemas["git_commit"]["parameters"]["properties"]
-    assert props["message"]["type"] == "string" and props["all"]["type"] == "boolean"
+    assert props["message"]["type"] == "array" and props["all"]["type"] == "boolean"
     assert props["paths"] == {"type": "array", "items": {"type": "string"}}
     assert "cwd" in props  # options of the parent command are part of the arguments
     assert schemas["git_commit"]["description"] == "The `git commit` command."
@@ -106,7 +106,7 @@ _CASES: list[tuple[str, list[tuple[str, dict[str, Any]]]]] = [
     ("mytool --x 1", [("mytool", {"argv": ["--x", "1"]})]),
     ('git add . && git commit -am "x y" | tee log; echo $(cat f)', [
         ("git_add", {"paths": ["."]}),
-        ("git_commit", {"message": "x y", "all": True}),
+        ("git_commit", {"message": ["x y"], "all": True}),
         ("tee", {"paths": ["log"]}),
         ("cat", {"paths": ["f"]}),
         ("echo", {"words": ["$(cat f)"]}),
