@@ -306,3 +306,39 @@ diff:
     - {flags: [-r, --recursive], type: bool}
     - {flags: [-q, --brief], type: bool}
   positionals: [{name: paths, nargs: "*"}]
+
+printenv:
+  positionals: [{name: names, nargs: "*"}]
+
+export:
+  options: [{flags: [-p], dest: print, type: bool}, {flags: [-n], dest: unexport, type: bool}]
+  positionals: [{name: assignments, nargs: "*"}]
+
+declare:
+  aliases: [typeset]
+  options:
+    - {flags: [-p], dest: print, type: bool}
+    - {flags: [-x], dest: export, type: bool}
+    - {flags: [-r], dest: readonly, type: bool}
+  positionals: [{name: names, nargs: "*"}]
+
+base64:
+  options: [{flags: [-d, --decode], dest: decode, type: bool}, {flags: [-w, --wrap]}]
+  positionals: [{name: paths, nargs: "*"}]
+
+strings:
+  options: [{flags: [-n, --bytes]}, {flags: [-a, --all], type: bool}]
+  positionals: [{name: paths, nargs: "*"}]
+
+xxd:
+  options: [{flags: [-r], dest: revert, type: bool}, {flags: [-p], dest: plain, type: bool}, {flags: [-l], dest: length}]
+  positionals: [{name: paths, nargs: "*"}]
+
+hexdump:
+  aliases: [hd]
+  options: [{flags: [-C], dest: canonical, type: bool}, {flags: [-n], dest: length}]
+  positionals: [{name: paths, nargs: "*"}]
+
+od:
+  options: [{flags: [-A], dest: address_radix}, {flags: [-t], dest: format}, {flags: [-c], dest: chars, type: bool}]
+  positionals: [{name: paths, nargs: "*"}]

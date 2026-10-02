@@ -25,6 +25,12 @@ docker-compose: &compose
         - {flags: [--pull], type: bool}
       positionals: [{name: services, nargs: "*"}]
     pull: {positionals: [{name: services, nargs: "*"}]}
+    config:
+      options:
+        - {flags: [--services], type: bool}
+        - {flags: [-q, --quiet], type: bool}
+        - {flags: [--format]}
+      positionals: [{name: services, nargs: "*"}]
     ps:
       options:
         - {flags: [-a, --all], type: bool}
@@ -116,6 +122,9 @@ docker:
         - {flags: [-p, --password]}
         - {flags: [--password-stdin], type: bool}
       positionals: [{name: server, nargs: "?"}]
+    inspect:
+      options: [{flags: [-f, --format]}, {flags: [--type]}]
+      positionals: [{name: names, nargs: "*"}]
     ps:
       options:
         - {flags: [-a, --all], type: bool}

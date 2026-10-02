@@ -90,7 +90,7 @@ def test_tool_schemas() -> None:
 
 
 def test_packs_load() -> None:
-    assert available_packs() == ["cloud", "docker", "files", "git", "network", "python", "shell"]
+    assert available_packs() == ["cloud", "docker", "files", "git", "network", "python", "secrets", "shell"]
     assert SpecRegistry(packs=[]).get("git") is None
 
 

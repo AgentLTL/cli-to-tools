@@ -92,13 +92,14 @@ These packs are bundled and loaded by default:
 
 | Pack | Commands |
 |---|---|
-| `shell` | coreutils and text tools: `ls`, `cat`, `cp`, `mv`, `rm`, `find`, `sed`, `awk`, `grep`, ... |
+| `shell` | coreutils and text tools: `ls`, `cat`, `cp`, `mv`, `rm`, `find`, `sed`, `awk`, `grep`, ...; environment (`printenv`, `export`, `declare`); binary viewers (`base64`, `strings`, `xxd`, `hexdump`, `od`) |
 | `files` | other file writers: `perl`, `ed`, `vim`, `nano`, `code`, `dd`, `install`, `truncate`, `shred`, `split`, `sponge`, `patch`, archives (`unzip`, `zip`, `7z`) |
-| `git` | `git` |
-| `docker` | `docker`, with `docker compose` / `docker-compose` |
+| `git` | `git`, including `git credential` |
+| `docker` | `docker` (including `inspect`, `login`), with `docker compose` / `docker-compose` (including `config`) |
 | `python` | `python`, `pip`, `pytest` |
 | `network` | `curl`, `wget`, `ssh`, `scp`, `rsync` |
-| `cloud` | `kubectl`, `terraform`, `gh`, `aws s3` |
+| `cloud` | `kubectl` (including `config view`, `create secret`), `terraform` (including `output`, `show`, `state pull`), `helm`, `gh` (including `auth`, `secret`, `gist`), `aws` (`s3`, `secretsmanager`, `ssm`, `configure`, `iam`, `sts`, `kms`, `ecr`), `gcloud` (`secrets`, `auth`, `iam`, `container`), `az` (`keyvault`, `account`, `storage`, `acr`, `ad`, `aks`), `vault`, `doppler`, `heroku`, `vercel` |
+| `secrets` | decryption (`sops`, `ansible-vault`, `gpg`, `age`, `openssl`), password managers and keychains (`op`, `bw`, `pass`, `security`, `secret-tool`), database clients that take passwords (`mysql`/`mariadb`, `psql`, `redis-cli`) |
 
 They cover the commonly used subcommands and flags, not complete man pages:
 - **Unknown flags** are kept in `extra_args`.

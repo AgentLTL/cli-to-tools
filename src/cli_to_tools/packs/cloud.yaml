@@ -7,6 +7,7 @@ kubectl:
     - {flags: [--context], global: true}
     - {flags: [--kubeconfig], global: true}
     - {flags: [-A, --all-namespaces], type: bool, global: true}
+    - {flags: [-v, --v], dest: verbosity, global: true, help: "Log level; 6 and above print bearer tokens"}
   subcommands:
     get:
       options: [{flags: [-o, --output]}, {flags: [-l, --selector]}]
@@ -19,8 +20,28 @@ kubectl:
     apply:
       options: [{flags: [-f, --filename], type: list}, {flags: [-k, --kustomize]}, {flags: [--dry-run]}]
     create:
-      options: [{flags: [-f, --filename], type: list}, {flags: [--dry-run]}]
+      options:
+        - {flags: [-f, --filename], type: list}
+        - {flags: [--dry-run]}
+        - {flags: [--from-literal], type: list, help: "key=value; the value is a secret on the command line"}
+        - {flags: [--from-file], type: list}
+        - {flags: [--from-env-file], type: list}
+        - {flags: [--docker-password]}
       positionals: [{name: resource, nargs: "?"}, {name: names, nargs: "*"}]
+    config:
+      subcommands:
+        view:
+          options:
+            - {flags: [--raw], type: bool, help: "Shows tokens and client keys"}
+            - {flags: [--minify], type: bool}
+            - {flags: [--flatten], type: bool}
+            - {flags: [-o, --output]}
+        get-contexts: {}
+        current-context: {}
+        use-context: {positionals: [{name: context}]}
+        set-credentials:
+          options: [{flags: [--token]}, {flags: [--password]}, {flags: [--client-key]}]
+          positionals: [{name: name}]
     delete:
       options:
         - {flags: [-f, --filename], type: list}
@@ -61,10 +82,17 @@ terraform:
       options: [{flags: [-auto-approve], dest: auto_approve, type: bool}, {flags: [-target], type: list}]
     validate: {}
     fmt: {positionals: [{name: paths, nargs: "*"}]}
-    output: {positionals: [{name: name, nargs: "?"}]}
+    output:
+      options: [{flags: [-raw], type: bool}, {flags: [-json], type: bool}]
+      positionals: [{name: name, nargs: "?"}]
+    show:
+      options: [{flags: [-json], type: bool}]
+      positionals: [{name: path, nargs: "?"}]
+    console: {}
     state:
       subcommands:
         list: {}
+        pull: {}
         show: {positionals: [{name: address}]}
         rm: {positionals: [{name: addresses, nargs: "*"}]}
         mv: {positionals: [{name: source}, {name: destination}]}
@@ -123,6 +151,25 @@ gh:
     api:
       options: [{flags: [-X, --method]}, {flags: [-f, --raw-field], type: list}, {flags: [-F, --field], type: list}]
       positionals: [{name: endpoint}]
+    auth:
+      subcommands:
+        token: {options: [{flags: [-h, --hostname]}, {flags: [-u, --user]}]}
+        status: {options: [{flags: [-t, --show-token], type: bool}, {flags: [-h, --hostname]}]}
+        login: {options: [{flags: [--with-token], type: bool}, {flags: [-h, --hostname]}, {flags: [-s, --scopes]}]}
+        refresh: {options: [{flags: [-s, --scopes]}]}
+        logout: {}
+    secret:
+      subcommands:
+        list: {}
+        set:
+          options: [{flags: [-b, --body], help: "The secret value"}, {flags: [-f, --env-file]}, {flags: [-e, --env]}]
+          positionals: [{name: name, nargs: "?"}]
+        delete: {positionals: [{name: name}]}
+    gist:
+      subcommands:
+        create:
+          options: [{flags: [-p, --public], type: bool}, {flags: [-d, --desc]}]
+          positionals: [{name: files, nargs: "*"}]
 
 aws:
   options:
@@ -130,6 +177,7 @@ aws:
     - {flags: [--region], global: true}
     - {flags: [--output], global: true}
     - {flags: [--dryrun, --dry-run], dest: dry_run, type: bool}
+    - {flags: [--debug], type: bool, global: true, help: "Prints signed request headers"}
   subcommands:
     s3:
       subcommands:
@@ -148,3 +196,219 @@ aws:
           positionals: [{name: source}, {name: destination}]
         mb: {positionals: [{name: bucket}]}
         rb: {options: [{flags: [--force], type: bool}], positionals: [{name: bucket}]}
+    secretsmanager:
+      subcommands:
+        get-secret-value: {options: [{flags: [--secret-id]}, {flags: [--version-stage]}]}
+        batch-get-secret-value: {options: [{flags: [--secret-id-list], type: list}, {flags: [--filters]}]}
+        list-secrets: {}
+        create-secret: {options: [{flags: [--name]}, {flags: [--secret-string]}, {flags: [--secret-binary]}]}
+        put-secret-value: {options: [{flags: [--secret-id]}, {flags: [--secret-string]}]}
+        delete-secret: {options: [{flags: [--secret-id]}, {flags: [--force-delete-without-recovery], type: bool}]}
+    ssm:
+      subcommands:
+        get-parameter: {options: [{flags: [--name]}, {flags: [--with-decryption], type: bool}]}
+        get-parameters: {options: [{flags: [--names], type: list}, {flags: [--with-decryption], type: bool}]}
+        get-parameters-by-path:
+          options: [{flags: [--path]}, {flags: [--with-decryption], type: bool}, {flags: [--recursive], type: bool}]
+        put-parameter: {options: [{flags: [--name]}, {flags: [--value]}, {flags: [--type]}]}
+    configure:
+      subcommands:
+        get: {positionals: [{name: key}]}
+        set: {positionals: [{name: key}, {name: value}]}
+        list: {}
+        export-credentials: {options: [{flags: [--format]}]}
+    ecr:
+      subcommands:
+        get-login-password: {}
+    kms:
+      subcommands:
+        decrypt: {options: [{flags: [--ciphertext-blob]}, {flags: [--key-id]}]}
+    iam:
+      subcommands:
+        create-access-key: {options: [{flags: [--user-name]}]}
+        create-login-profile: {options: [{flags: [--user-name]}, {flags: [--password]}]}
+        list-access-keys: {options: [{flags: [--user-name]}]}
+    sts:
+      subcommands:
+        get-session-token: {options: [{flags: [--duration-seconds]}]}
+        assume-role: {options: [{flags: [--role-arn]}, {flags: [--role-session-name]}]}
+        get-caller-identity: {}
+
+
+gcloud:
+  options:
+    - {flags: [--project], global: true}
+    - {flags: [--account], global: true}
+    - {flags: [--verbosity], global: true}
+    - {flags: [--log-http], dest: log_http, type: bool, global: true, help: "Prints request headers"}
+  subcommands:
+    secrets:
+      subcommands:
+        list: {}
+        describe: {positionals: [{name: secret}]}
+        create: {options: [{flags: [--data-file]}], positionals: [{name: secret}]}
+        delete: {positionals: [{name: secret}]}
+        versions:
+          subcommands:
+            access: {options: [{flags: [--secret]}, {flags: [--out-file]}], positionals: [{name: version, nargs: "?"}]}
+            add: {options: [{flags: [--secret]}, {flags: [--data-file]}], positionals: [{name: secret, nargs: "?"}]}
+            list: {positionals: [{name: secret}]}
+    auth:
+      subcommands:
+        print-access-token: {positionals: [{name: account, nargs: "?"}]}
+        print-identity-token: {options: [{flags: [--audiences]}], positionals: [{name: account, nargs: "?"}]}
+        login: {options: [{flags: [--cred-file]}, {flags: [--no-launch-browser], type: bool}]}
+        activate-service-account: {options: [{flags: [--key-file]}], positionals: [{name: account, nargs: "?"}]}
+        list: {}
+        application-default:
+          subcommands:
+            print-access-token: {}
+            login: {}
+    iam:
+      subcommands:
+        service-accounts:
+          subcommands:
+            keys:
+              subcommands:
+                create: {options: [{flags: [--iam-account]}], positionals: [{name: output_file}]}
+                list: {options: [{flags: [--iam-account]}]}
+            list: {}
+    container:
+      subcommands:
+        clusters:
+          subcommands:
+            get-credentials: {options: [{flags: [--zone]}, {flags: [--region]}], positionals: [{name: cluster}]}
+            list: {}
+    config:
+      subcommands:
+        list: {}
+        set: {positionals: [{name: property}, {name: value}]}
+
+az:
+  options:
+    - {flags: [--subscription], global: true}
+    - {flags: [-o, --output], global: true}
+    - {flags: [--debug], type: bool, global: true, help: "Prints request headers"}
+    - {flags: [-g, --resource-group], global: true}
+  subcommands:
+    keyvault:
+      subcommands:
+        secret:
+          subcommands:
+            show: {options: [{flags: [--vault-name]}, {flags: [-n, --name]}, {flags: [--id]}]}
+            download: {options: [{flags: [--vault-name]}, {flags: [-n, --name]}, {flags: [-f, --file]}]}
+            list: {options: [{flags: [--vault-name]}]}
+            set: {options: [{flags: [--vault-name]}, {flags: [-n, --name]}, {flags: [--value]}, {flags: [-f, --file]}]}
+        key:
+          subcommands:
+            download: {options: [{flags: [--vault-name]}, {flags: [-n, --name]}, {flags: [-f, --file]}]}
+    account:
+      subcommands:
+        get-access-token: {options: [{flags: [--resource]}, {flags: [--scope]}]}
+        show: {}
+        list: {}
+    storage:
+      subcommands:
+        account:
+          subcommands:
+            keys:
+              subcommands:
+                list: {options: [{flags: [-n, --account-name]}]}
+            show-connection-string: {options: [{flags: [-n, --name]}]}
+    acr:
+      subcommands:
+        credential:
+          subcommands:
+            show: {options: [{flags: [-n, --name]}]}
+        login: {options: [{flags: [-n, --name]}, {flags: [-p, --password]}, {flags: [--expose-token], type: bool}]}
+    ad:
+      subcommands:
+        sp:
+          subcommands:
+            create-for-rbac: {options: [{flags: [-n, --name]}, {flags: [--role]}, {flags: [--scopes]}]}
+            credential:
+              subcommands:
+                reset: {options: [{flags: [--id]}]}
+    aks:
+      subcommands:
+        get-credentials: {options: [{flags: [-n, --name]}, {flags: [--admin], type: bool}]}
+    login: {options: [{flags: [-u, --username]}, {flags: [-p, --password]}, {flags: [--service-principal], type: bool}]}
+
+helm:
+  options:
+    - {flags: [-n, --namespace], global: true}
+    - {flags: [--kube-context], global: true}
+    - {flags: [--debug], type: bool, global: true}
+  subcommands:
+    get:
+      subcommands:
+        values: {options: [{flags: [-a, --all], type: bool}, {flags: [-o, --output]}], positionals: [{name: release}]}
+        all: {positionals: [{name: release}]}
+        manifest: {positionals: [{name: release}]}
+    install: &helm_install
+      options:
+        - {flags: [-f, --values], type: list}
+        - {flags: [--set], type: list}
+        - {flags: [--set-string], type: list}
+        - {flags: [--set-file], type: list}
+        - {flags: [--dry-run], type: bool}
+        - {flags: [--wait], type: bool}
+        - {flags: [-i, --install], type: bool}
+        - {flags: [--create-namespace], type: bool}
+      positionals: [{name: release}, {name: chart, nargs: "?"}]
+    upgrade: *helm_install
+    template: *helm_install
+    uninstall: {options: [{flags: [--dry-run], type: bool}], positionals: [{name: releases, nargs: "*"}]}
+    rollback: {positionals: [{name: release}, {name: revision, nargs: "?"}]}
+    list: {}
+
+vault:
+  subcommands:
+    kv:
+      subcommands:
+        get: &vault_read
+          options: [{flags: [-field]}, {flags: [-format]}, {flags: [-mount]}, {flags: [-version]}]
+          positionals: [{name: path}]
+        put: {options: [{flags: [-mount]}], positionals: [{name: path}, {name: data, nargs: "*"}]}
+        list: {options: [{flags: [-mount]}], positionals: [{name: path}]}
+        delete: {options: [{flags: [-mount]}], positionals: [{name: path}]}
+    read: *vault_read
+    write: {positionals: [{name: path}, {name: data, nargs: "*"}]}
+    token:
+      subcommands:
+        create: {options: [{flags: [-policy], type: list}, {flags: [-ttl]}, {flags: [-field]}]}
+        lookup: {positionals: [{name: token, nargs: "?"}]}
+    print:
+      subcommands:
+        token: {}
+    login: {options: [{flags: [-method]}], positionals: [{name: data, nargs: "*"}]}
+
+doppler:
+  subcommands:
+    secrets:
+      options: [{flags: [-p, --project]}, {flags: [-c, --config]}, {flags: [--raw], type: bool}]
+      subcommands:
+        get: {options: [{flags: [--plain], type: bool}, {flags: [--raw], type: bool}], positionals: [{name: names, nargs: "*"}]}
+        download: {options: [{flags: [--no-file], type: bool}, {flags: [--format]}], positionals: [{name: file, nargs: "?"}]}
+        set: {positionals: [{name: values, nargs: "*"}]}
+    run: {posix: true, positionals: [{name: command, nargs: "*"}]}
+
+heroku:
+  options:
+    - {flags: [-a, --app], global: true}
+  subcommands:
+    config: {options: [{flags: [-s, --shell], type: bool}, {flags: [-j, --json], type: bool}]}
+    "config:get": {positionals: [{name: key}]}
+    "config:set": {positionals: [{name: values, nargs: "*"}]}
+    "auth:token": {}
+
+vercel:
+  options:
+    - {flags: [--token], global: true}
+  subcommands:
+    env:
+      subcommands:
+        pull: {options: [{flags: [--environment]}, {flags: [-y, --yes], type: bool}], positionals: [{name: file, nargs: "?"}]}
+        ls: {}
+        add: {positionals: [{name: name}, {name: environment, nargs: "?"}]}
+        rm: {positionals: [{name: name}]}

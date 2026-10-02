@@ -190,3 +190,5 @@ git:
         - {flags: [--unset], type: bool}
         - {flags: [-l, --list], type: bool}
       positionals: [{name: key, nargs: "?"}, {name: value, nargs: "?"}]
+    credential:
+      positionals: [{name: action, choices: [fill, approve, reject]}]
