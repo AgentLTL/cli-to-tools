@@ -88,11 +88,25 @@ shell reading its script from stdin (`curl ... | sh`).
 
 ## Specs
 
-Bundled packs are loaded by default: `shell`, `git`, `docker` (with `docker compose` /
-`docker-compose`), `python` (`python`, `pip`, `pytest`), `network` (`curl`, `wget`, `ssh`, `scp`,
-`rsync`). They cover the commonly used subcommands and flags, not complete man pages. Flags a spec
-does not know are kept in `extra_args`; an undeclared subcommand still gets a predictable name
-(`git frob x` -> `git_frob`, `{"argv": [...]}`).
+These packs are bundled and loaded by default:
+
+| Pack | Commands |
+|---|---|
+| `shell` | coreutils and text tools: `ls`, `cat`, `cp`, `mv`, `rm`, `find`, `sed`, `awk`, `grep`, ... |
+| `files` | other file writers: `perl`, `ed`, `vim`, `nano`, `code`, `dd`, `install`, `truncate`, `shred`, `split`, `sponge`, `patch`, archives (`unzip`, `zip`, `7z`) |
+| `git` | `git` |
+| `docker` | `docker`, with `docker compose` / `docker-compose` |
+| `python` | `python`, `pip`, `pytest` |
+| `network` | `curl`, `wget`, `ssh`, `scp`, `rsync` |
+| `cloud` | `kubectl`, `terraform`, `gh`, `aws s3` |
+
+They cover the commonly used subcommands and flags, not complete man pages:
+- **Unknown flags** are kept in `extra_args`.
+- **An undeclared subcommand** still gets a predictable name: `git frob x` becomes `git_frob`,
+  with `{"argv": [...]}`.
+- **Global flags:** options a CLI accepts anywhere are marked `global: true`, so
+  `kubectl delete pod x -n prod` records `namespace: prod`. That applies to kubectl's `-n`
+  and `--context`, gh's `-R`, and aws's `--profile` and `--region`.
 
 ```python
 from cli_to_tools import CommandSpec, SpecRegistry, Translator
