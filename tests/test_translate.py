@@ -90,7 +90,7 @@ def test_tool_schemas() -> None:
 
 
 def test_packs_load() -> None:
-    assert available_packs() == ["docker", "git", "network", "python", "shell"]
+    assert available_packs() == ["cloud", "docker", "files", "git", "network", "python", "shell"]
     assert SpecRegistry(packs=[]).get("git") is None
 
 
@@ -113,7 +113,7 @@ _CASES: list[tuple[str, list[tuple[str, dict[str, Any]]]]] = [
     ]),
     ("git -C /repo push -f origin main", [
         ("git_push", {"cwd": "/repo", "force": True, "remote": "origin", "refspecs": ["main"]})]),
-    ("git checkout -b feat -- f.py", [("git_checkout", {"new_branch": "feat", "targets": ["f.py"]})]),
+    ("git checkout -b feat -- f.py", [("git_checkout", {"new_branch": "feat", "paths": ["f.py"]})]),
     ("git reset --hard HEAD~1", [("git_reset", {"hard": True, "targets": ["HEAD~1"]})]),
     ("git stash; git stash pop; git remote rm origin", [
         ("git_stash", {}), ("git_stash_pop", {}), ("git_remote_remove", {"name": "origin"})]),

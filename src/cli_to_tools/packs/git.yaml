@@ -71,6 +71,7 @@ git:
         - {flags: [-B], dest: reset_branch}
         - {flags: [-f, --force], type: bool}
       positionals: [{name: targets, nargs: "*"}]
+      after_dashdash: paths
     switch:
       options:
         - {flags: [-c, --create]}
@@ -80,7 +81,9 @@ git:
       options:
         - {flags: [--staged], type: bool}
         - {flags: [-s, --source]}
+        - {flags: [-W, --worktree], type: bool}
       positionals: [{name: paths, nargs: "*"}]
+      after_dashdash: paths
     branch:
       options:
         - {flags: [-d, --delete], type: bool}
@@ -110,6 +113,7 @@ git:
         - {flags: [--soft], type: bool}
         - {flags: [--mixed], type: bool}
       positionals: [{name: targets, nargs: "*"}]
+      after_dashdash: paths
     revert:
       options:
         - {flags: [--no-edit], type: bool}
@@ -129,6 +133,7 @@ git:
         - {flags: [--stat], type: bool}
         - {flags: [--name-only], type: bool}
       positionals: [{name: targets, nargs: "*"}]
+      after_dashdash: paths
     log:
       options:
         - {flags: [--oneline], type: bool}
@@ -145,6 +150,16 @@ git:
         - {flags: [-m, --message]}
         - {flags: [-f, --force], type: bool}
       positionals: [{name: names, nargs: "*"}]
+    apply:
+      options:
+        - {flags: [--check], type: bool}
+        - {flags: [--index], type: bool}
+        - {flags: [--cached], type: bool}
+        - {flags: [-R, --reverse], type: bool}
+        - {flags: [-p], dest: strip}
+        - {flags: [--directory]}
+        - {flags: [--3way, "-3"], dest: three_way, type: bool}
+      positionals: [{name: patches, nargs: "*"}]
     stash:
       subcommands:
         push:

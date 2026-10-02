@@ -26,7 +26,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import yaml
 
-_OPTION_TYPES = {"str", "bool", "count", "list", "int"}
+_OPTION_TYPES = {"str", "bool", "count", "list", "int", "attached"}
 
 
 def normalize_tool_name(name: str) -> str:
@@ -66,10 +66,34 @@ class CommandSpec:
         """The command as typed, including parent commands (``git commit``)."""
         self.subcommands: Dict[str, CommandSpec] = {}
         self._parser = _Parser(prog=executable, add_help=False, allow_abbrev=False)
+        self._calls: List[Tuple[Tuple[Any, ...], Dict[str, Any]]] = []
+        self._attached: Dict[str, str] = {}        # flag -> dest, value glued to the flag
+        self._unless: Dict[str, List[str]] = {}    # positional -> option dests that drop it
+        self._variants: Dict[frozenset, _Parser] = {}
+        self.after_dashdash: Optional[str] = None
+        """Argument that collects the words after a literal ``--`` (git's paths)."""
+        self.key_value = False
+        """Operands are ``key=value`` words (``dd if=a of=b``)."""
 
     def add_argument(self, *args: Any, **kwargs: Any) -> argparse.Action:
         """Declare an option or positional; same signature as ``ArgumentParser.add_argument``."""
+        self._calls.append((args, kwargs))
+        self._variants.clear()
         return self._parser.add_argument(*args, **kwargs)
+
+    def add_attached(self, *flags: str, dest: Optional[str] = None) -> None:
+        """Declare a flag whose optional value must be glued to it: ``-i``, ``-i.bak``,
+        ``--in-place=.bak`` (GNU sed, perl). The call gets ``<dest>: True`` and, when a
+        value is given, ``<dest>_suffix``. A detached next word is never taken as the value."""
+        name = dest or flags[-1].lstrip("-").replace("-", "_")
+        for flag in flags:
+            self._attached[flag] = name
+
+    def add_unless(self, positional: str, dests: Iterable[str]) -> None:
+        """Drop *positional* when any of the option *dests* is given (``sed -e`` replaces the
+        script operand; ``cp -t DIR`` leaves no destination operand)."""
+        self._unless[positional] = list(dests)
+        self._variants.clear()
 
     def subcommand(
         self, name: str, tool_name: Optional[str] = None, posix: bool = False,
@@ -91,6 +115,9 @@ class CommandSpec:
             up in ``arguments["extra_args"]``; if argv does not fit the spec at all,
             ``arguments`` is ``{"argv": [...]}``. *matched* is False in both cases.
         """
+        if self.key_value:
+            return self._parse_key_value(argv)
+        argv, attached = self._take_attached(argv)
         options, rest = self._partition(argv, posix=True)
         # After a literal `--` the next word is an operand, never a subcommand.
         dispatch = bool(self.subcommands) and bool(rest) and "--" not in argv[:len(argv) - len(rest)]
@@ -109,18 +136,100 @@ class CommandSpec:
         if dispatch and re.fullmatch(r"[a-z][a-z0-9_-]*", rest[0]):
             # Undeclared subcommand: keep the naming scheme so specs stay predictable.
             return f"{self.tool_name}_{normalize_tool_name(rest[0])}", {"argv": list(argv)}, False
+        tail: Optional[List[str]] = None
+        if self.after_dashdash and "--" in argv:
+            cut = argv.index("--")
+            argv, tail = argv[:cut], argv[cut + 1:]
         try:
             if not self.posix:
                 options, rest = self._partition(argv, posix=False)
-            own, extra = self._parser.parse_known_args(options + (["--"] + rest if rest else []))
-            if rest and not self._parser._get_positional_actions():
+            parser = self._parser_for(options)
+            own, extra = parser.parse_known_args(options + (["--"] + rest if rest else []))
+            if rest and not parser._get_positional_actions():
                 extra.remove("--")  # argparse hands the separator back when nothing consumes it
         except _SpecError:
-            return self.tool_name, {"argv": list(argv)}, False
+            return self.tool_name, {"argv": list(argv) + (["--"] + tail if tail else [])}, False
         args = self._clean(own)
+        args.update(attached)
+        if tail is not None:
+            args[self.after_dashdash] = args.get(self.after_dashdash, []) + tail
         if extra:
             args["extra_args"] = extra
         return self.tool_name, args, not extra
+
+    def _parse_key_value(self, argv: List[str]) -> Tuple[str, Dict[str, Any], bool]:
+        args: Dict[str, Any] = {}
+        extra = []
+        for tok in argv:
+            key, eq, value = tok.partition("=")
+            if eq and key and not key.startswith("-"):
+                args[normalize_tool_name(key)] = value
+            else:
+                extra.append(tok)
+        if extra:
+            args["extra_args"] = extra
+        return self.tool_name, args, not extra
+
+    def _take_attached(self, argv: List[str]) -> Tuple[List[str], Dict[str, Any]]:
+        """Pull glued-value flags (see :meth:`add_attached`) out of *argv*."""
+        if not self._attached:
+            return argv, {}
+        out: List[str] = []
+        found: Dict[str, Any] = {}
+
+        def hit(dest: str, value: str) -> None:
+            found[dest] = True
+            if value:
+                found[f"{dest}_suffix"] = value
+
+        for i, tok in enumerate(argv):
+            if tok == "--":
+                out.extend(argv[i:])
+                break
+            flag, eq, value = tok.partition("=")
+            if tok.startswith("--") and flag in self._attached:
+                hit(self._attached[flag], value)
+                continue
+            if tok.startswith("-") and not tok.startswith("--") and len(tok) > 1:
+                kept = "-"
+                for j, char in enumerate(tok[1:], start=1):
+                    if "-" + char in self._attached:
+                        hit(self._attached["-" + char], tok[j + 1:])
+                        break
+                    kept += char
+                else:
+                    out.append(tok)
+                    continue
+                if kept != "-":
+                    out.append(kept)
+                continue
+            out.append(tok)
+        return out, found
+
+    def _parser_for(self, options: List[str]) -> "_Parser":
+        """The parser to use given the options present: positionals named in
+        :meth:`add_unless` are dropped when one of their options is given."""
+        if not self._unless:
+            return self._parser
+        given = set()
+        for tok in options:
+            flag = tok.split("=", 1)[0]
+            flags = [flag] if flag.startswith("--") or len(flag) == 2 else [
+                "-" + c for c in flag[1:]]
+            for f in flags:
+                action = self._parser._option_string_actions.get(f)
+                if action is not None:
+                    given.add(action.dest)
+        dropped = frozenset(p for p, dests in self._unless.items() if given & set(dests))
+        if not dropped:
+            return self._parser
+        if dropped not in self._variants:
+            parser = _Parser(prog=self.executable, add_help=False, allow_abbrev=False)
+            for args, kwargs in self._calls:
+                if not (args and not args[0].startswith("-") and args[0] in dropped):
+                    parser.add_argument(*args, **kwargs)
+            self._variants[dropped] = parser
+        return self._variants[dropped]
 
     def _properties(self) -> Dict[str, Dict[str, Any]]:
         parent = getattr(self, "_parent", None)
@@ -142,6 +251,11 @@ class CommandSpec:
             if action.help:
                 schema["description"] = action.help
             props[action.dest] = schema
+        for dest in dict.fromkeys(self._attached.values()):
+            props[dest] = {"type": "boolean"}
+            props[f"{dest}_suffix"] = {"type": "string"}
+        if self.after_dashdash:
+            props[self.after_dashdash] = {"type": "array", "items": {"type": "string"}}
         return props
 
     def tool_schemas(self) -> List[Dict[str, Any]]:
@@ -213,7 +327,8 @@ class CommandSpec:
                   _parent: Optional[CommandSpec] = None) -> CommandSpec:
         """Build a spec from its YAML/dict form (see ``packs/*.yaml`` for the schema)."""
         data = data or {}
-        unknown = set(data) - {"tool", "posix", "aliases", "options", "positionals", "subcommands"}
+        unknown = set(data) - {"tool", "posix", "aliases", "options", "positionals", "subcommands",
+                               "after_dashdash", "key_value"}
         if unknown:
             raise ValueError(f"spec '{executable}': unknown keys {sorted(unknown)}")
         posix = bool(data.get("posix", False))
@@ -221,10 +336,15 @@ class CommandSpec:
             spec = cls(executable, data.get("tool"), posix)
         else:
             spec = _parent.subcommand(executable, data.get("tool"), posix, data.get("aliases", ()))
+        spec.after_dashdash = data.get("after_dashdash")
+        spec.key_value = bool(data.get("key_value", False))
         for opt in data.get("options", []):
             kind = opt.get("type", "str")
             if kind not in _OPTION_TYPES:
                 raise ValueError(f"spec '{executable}': unknown option type '{kind}'")
+            if kind == "attached":
+                spec.add_attached(*opt["flags"], dest=opt.get("dest"))
+                continue
             kwargs: Dict[str, Any] = {}
             for key in ("dest", "help", "choices"):
                 if key in opt:
@@ -241,6 +361,8 @@ class CommandSpec:
         for pos in data.get("positionals", []):
             kwargs = {key: pos[key] for key in ("nargs", "help", "choices") if key in pos}
             spec.add_argument(pos["name"], **kwargs)
+            if pos.get("unless"):
+                spec.add_unless(pos["name"], pos["unless"])
         for name, sub in (data.get("subcommands") or {}).items():
             cls.from_dict(name, sub, _parent=spec)
         return spec

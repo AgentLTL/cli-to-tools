@@ -10,6 +10,9 @@ curl:
     - {flags: [-F, --form], type: list}
     - {flags: [-o, --output]}
     - {flags: [-O, --remote-name], type: bool}
+    - {flags: [--output-dir]}
+    - {flags: [-J, --remote-header-name], type: bool}
+    - {flags: [-T, --upload-file]}
     - {flags: [-u, --user]}
     - {flags: [-L, --location], type: bool}
     - {flags: [-s, --silent], type: bool}

@@ -1,0 +1,136 @@
+# files – commands that write, overwrite or destroy files. See shell.yaml for the schema.
+
+perl:
+  options:
+    - {flags: [-i], dest: in_place, type: attached}
+    - {flags: [-p], dest: print_loop, type: bool}
+    - {flags: [-n], dest: loop, type: bool}
+    - {flags: [-l], dest: line_endings, type: bool}
+    - {flags: [-a], dest: autosplit, type: bool}
+    - {flags: [-w], dest: warnings, type: bool}
+    - {flags: [-e, -E], dest: expression, type: list}
+    - {flags: [-M, -m], dest: modules, type: list}
+  positionals:
+    - {name: script, nargs: "?", unless: [expression]}
+    - {name: paths, nargs: "*"}
+
+ed:
+  options:
+    - {flags: [-s, --quiet, --silent], dest: quiet, type: bool}
+    - {flags: [-p, --prompt]}
+  positionals: [{name: paths, nargs: "?"}]
+
+vim:
+  aliases: [vi, nvim, ex, view]
+  options:
+    - {flags: [-c], dest: commands, type: list}
+    - {flags: [-e], dest: ex_mode, type: bool}
+    - {flags: [-s], dest: silent, type: bool}
+    - {flags: [-R], dest: readonly, type: bool}
+    - {flags: [-n], dest: no_swap, type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+nano:
+  options:
+    - {flags: [-B, --backup], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+code:
+  options:
+    - {flags: [-n, --new-window], type: bool}
+    - {flags: [-r, --reuse-window], type: bool}
+    - {flags: [-g, --goto], type: bool}
+    - {flags: [-d, --diff], type: bool}
+    - {flags: [-w, --wait], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+dd:
+  key_value: true
+
+install:
+  options:
+    - {flags: [-m, --mode]}
+    - {flags: [-o, --owner]}
+    - {flags: [-g, --group]}
+    - {flags: [-d, --directory], dest: directories, type: bool}
+    - {flags: [-D], dest: create_leading, type: bool}
+    - {flags: [-t, --target-directory], dest: destination_dir}
+    - {flags: [-T, --no-target-directory], type: bool}
+    - {flags: [-v, --verbose], type: bool}
+  positionals:
+    - {name: sources, nargs: "+"}
+    - {name: destination, unless: [destination_dir, directories]}
+
+truncate:
+  options:
+    - {flags: [-s, --size]}
+    - {flags: [-r, --reference]}
+    - {flags: [-c, --no-create], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+shred:
+  options:
+    - {flags: [-u, --remove], type: bool}
+    - {flags: [-n, --iterations]}
+    - {flags: [-z, --zero], type: bool}
+    - {flags: [-f, --force], type: bool}
+    - {flags: [-v, --verbose], type: bool}
+  positionals: [{name: paths, nargs: "*"}]
+
+split:
+  options:
+    - {flags: [-l, --lines]}
+    - {flags: [-b, --bytes]}
+    - {flags: [-n, --number]}
+    - {flags: [-d, --numeric-suffixes], type: bool}
+    - {flags: [-a, --suffix-length]}
+  positionals: [{name: file, nargs: "?"}, {name: prefix, nargs: "?"}]
+
+sponge:
+  options:
+    - {flags: [-a], dest: append, type: bool}
+  positionals: [{name: file, nargs: "?"}]
+
+patch:
+  options:
+    - {flags: [-p, --strip], dest: strip}
+    - {flags: [-i, --input]}
+    - {flags: [-d, --directory]}
+    - {flags: [-R, --reverse], type: bool}
+    - {flags: [-N, --forward], type: bool}
+    - {flags: [-o, --output]}
+    - {flags: [-b, --backup], type: bool}
+    - {flags: [--dry-run], type: bool}
+    - {flags: [-f, --force], type: bool}
+    - {flags: [-s, --silent, --quiet], dest: quiet, type: bool}
+  positionals: [{name: file, nargs: "?"}, {name: patchfile, nargs: "?"}]
+
+unzip:
+  options:
+    - {flags: [-d], dest: directory}
+    - {flags: [-o], dest: overwrite, type: bool}
+    - {flags: [-n], dest: never_overwrite, type: bool}
+    - {flags: [-q], dest: quiet, type: bool}
+    - {flags: [-l], dest: list, type: bool}
+  positionals: [{name: archive}, {name: members, nargs: "*"}]
+
+zip:
+  options:
+    - {flags: [-r], dest: recursive, type: bool}
+    - {flags: [-q], dest: quiet, type: bool}
+    - {flags: [-d], dest: delete, type: bool}
+    - {flags: [-m], dest: move, type: bool}
+  positionals: [{name: archive}, {name: paths, nargs: "*"}]
+
+7z:
+  subcommands:
+    x:
+      aliases: [e]
+      options:
+        - {flags: [-o], dest: directory}
+        - {flags: [-y], dest: assume_yes, type: bool}
+      positionals: [{name: archive}, {name: members, nargs: "*"}]
+    a:
+      positionals: [{name: archive}, {name: paths, nargs: "*"}]
+    l:
+      positionals: [{name: archive}]

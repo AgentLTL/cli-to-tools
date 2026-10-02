@@ -1,0 +1,150 @@
+# cloud – deployment and infrastructure CLIs. See shell.yaml for the schema.
+# Commands not declared here keep their naming scheme (`kubectl foo` -> kubectl_foo, argv).
+
+kubectl:
+  options:
+    - {flags: [-n, --namespace]}
+    - {flags: [--context]}
+    - {flags: [--kubeconfig]}
+    - {flags: [-A, --all-namespaces], type: bool}
+  subcommands:
+    get:
+      options: [{flags: [-o, --output]}, {flags: [-l, --selector]}]
+      positionals: [{name: resource, nargs: "?"}, {name: names, nargs: "*"}]
+    describe:
+      positionals: [{name: resource, nargs: "?"}, {name: names, nargs: "*"}]
+    logs:
+      options: [{flags: [-f, --follow], type: bool}, {flags: [-c, --container]}]
+      positionals: [{name: names, nargs: "*"}]
+    apply:
+      options: [{flags: [-f, --filename], type: list}, {flags: [-k, --kustomize]}, {flags: [--dry-run]}]
+    create:
+      options: [{flags: [-f, --filename], type: list}, {flags: [--dry-run]}]
+      positionals: [{name: resource, nargs: "?"}, {name: names, nargs: "*"}]
+    delete:
+      options:
+        - {flags: [-f, --filename], type: list}
+        - {flags: [-l, --selector]}
+        - {flags: [--all], type: bool}
+        - {flags: [--force], type: bool}
+        - {flags: [--grace-period]}
+      positionals: [{name: resource, nargs: "?"}, {name: names, nargs: "*"}]
+    exec:
+      posix: true
+      options: [{flags: [-i, --stdin], type: bool}, {flags: [-t, --tty], type: bool}, {flags: [-c, --container]}]
+      positionals: [{name: pod}, {name: command, nargs: "*"}]
+    scale:
+      options: [{flags: [--replicas]}]
+      positionals: [{name: resource, nargs: "?"}, {name: names, nargs: "*"}]
+    rollout:
+      positionals: [{name: action}, {name: resource, nargs: "?"}, {name: names, nargs: "*"}]
+    drain:
+      options: [{flags: [--force], type: bool}, {flags: [--ignore-daemonsets], type: bool}, {flags: [--delete-emptydir-data], type: bool}]
+      positionals: [{name: nodes, nargs: "*"}]
+    cordon: {positionals: [{name: nodes, nargs: "*"}]}
+    uncordon: {positionals: [{name: nodes, nargs: "*"}]}
+    port-forward:
+      positionals: [{name: target}, {name: ports, nargs: "*"}]
+
+terraform:
+  options:
+    - {flags: [-chdir], dest: chdir}
+  subcommands:
+    init:
+      options: [{flags: [-upgrade], type: bool}, {flags: [-reconfigure], type: bool}]
+    plan:
+      options: [{flags: [-out]}, {flags: [-target], type: list}, {flags: [-var], type: list}, {flags: [-var-file], type: list}, {flags: [-destroy], type: bool}]
+    apply:
+      options: [{flags: [-auto-approve], dest: auto_approve, type: bool}, {flags: [-target], type: list}, {flags: [-var], type: list}, {flags: [-var-file], type: list}]
+      positionals: [{name: plan, nargs: "?"}]
+    destroy:
+      options: [{flags: [-auto-approve], dest: auto_approve, type: bool}, {flags: [-target], type: list}]
+    validate: {}
+    fmt: {positionals: [{name: paths, nargs: "*"}]}
+    output: {positionals: [{name: name, nargs: "?"}]}
+    state:
+      subcommands:
+        list: {}
+        show: {positionals: [{name: address}]}
+        rm: {positionals: [{name: addresses, nargs: "*"}]}
+        mv: {positionals: [{name: source}, {name: destination}]}
+    import: {positionals: [{name: address}, {name: id}]}
+    workspace:
+      subcommands:
+        select: {positionals: [{name: name}]}
+        new: {positionals: [{name: name}]}
+        delete: {positionals: [{name: name}]}
+        list: {}
+
+gh:
+  options:
+    - {flags: [-R, --repo]}
+  subcommands:
+    pr:
+      subcommands:
+        create:
+          options:
+            - {flags: [-t, --title]}
+            - {flags: [-b, --body]}
+            - {flags: [-B, --base]}
+            - {flags: [-H, --head]}
+            - {flags: [-d, --draft], type: bool}
+            - {flags: [-f, --fill], type: bool}
+        merge:
+          options:
+            - {flags: [-m, --merge], type: bool}
+            - {flags: [-s, --squash], type: bool}
+            - {flags: [-r, --rebase], type: bool}
+            - {flags: [--admin], type: bool}
+            - {flags: [-d, --delete-branch], type: bool}
+            - {flags: [--auto], type: bool}
+          positionals: [{name: pr, nargs: "?"}]
+        close: {positionals: [{name: pr, nargs: "?"}]}
+        checkout: {positionals: [{name: pr}]}
+        view: {positionals: [{name: pr, nargs: "?"}]}
+        list: {}
+    issue:
+      subcommands:
+        create: {options: [{flags: [-t, --title]}, {flags: [-b, --body]}]}
+        close: {positionals: [{name: issue}]}
+        view: {positionals: [{name: issue}]}
+        list: {}
+    repo:
+      subcommands:
+        delete: {options: [{flags: [--yes], type: bool}], positionals: [{name: repo, nargs: "?"}]}
+        create: {options: [{flags: [--public], type: bool}, {flags: [--private], type: bool}], positionals: [{name: name, nargs: "?"}]}
+        clone: {positionals: [{name: repo}, {name: directory, nargs: "?"}]}
+        view: {positionals: [{name: repo, nargs: "?"}]}
+        edit: {options: [{flags: [--visibility]}], positionals: [{name: repo, nargs: "?"}]}
+    release:
+      subcommands:
+        create: {options: [{flags: [-t, --title]}, {flags: [-n, --notes]}, {flags: [-d, --draft], type: bool}], positionals: [{name: tag}, {name: files, nargs: "*"}]}
+        delete: {options: [{flags: [-y, --yes], type: bool}], positionals: [{name: tag}]}
+    api:
+      options: [{flags: [-X, --method]}, {flags: [-f, --raw-field], type: list}, {flags: [-F, --field], type: list}]
+      positionals: [{name: endpoint}]
+
+aws:
+  options:
+    - {flags: [--profile]}
+    - {flags: [--region]}
+    - {flags: [--output]}
+    - {flags: [--dryrun, --dry-run], dest: dry_run, type: bool}
+  subcommands:
+    s3:
+      subcommands:
+        ls: {positionals: [{name: path, nargs: "?"}]}
+        cp:
+          options: [{flags: [--recursive], type: bool}]
+          positionals: [{name: source}, {name: destination}]
+        mv:
+          options: [{flags: [--recursive], type: bool}]
+          positionals: [{name: source}, {name: destination}]
+        rm:
+          options: [{flags: [--recursive], type: bool}]
+          positionals: [{name: path}]
+        sync:
+          options: [{flags: [--delete], type: bool}]
+          positionals: [{name: source}, {name: destination}]
+        mb: {positionals: [{name: bucket}]}
+        rb: {options: [{flags: [--force], type: bool}], positionals: [{name: bucket}]}

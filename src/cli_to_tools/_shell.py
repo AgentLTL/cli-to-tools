@@ -51,6 +51,7 @@ _PYTHON = re.compile(r"python(\d(\.\d+)?)?")
 _FIND_EXEC = {"-exec", "-execdir", "-ok", "-okdir"}
 
 _GLOB = re.compile(r"(?<!\\)[*?\[]")
+_VAR_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
 _BRACE = re.compile(r"\{[^{}]*(,|\.\.)[^{}]*\}")
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
@@ -187,6 +188,37 @@ class _Walker:
         self.strict = strict
         self._pipelines = 0
         self._repeated = 0  # > 0 while inside a loop that could not be unrolled
+        # Shell variables assigned a literal earlier in the command line (`F=a.txt; rm $F`).
+        # None marks one whose value is not known statically.
+        self.vars: Dict[str, Optional[str]] = {}
+
+    def _subst(self, word: Word) -> Word:
+        """Replace ``$NAME`` / ``${NAME}`` by values assigned earlier in the command line."""
+        if word.static or "$" not in word.text:
+            return word
+
+        def value(m: "re.Match[str]") -> str:
+            known = self.vars.get(m.group(1) or m.group(2))
+            return m.group(0) if known is None else known
+
+        text = _VAR_REF.sub(value, word.text)
+        if text == word.text:
+            return word
+        static = not (re.search(r"[$`]", text) or _GLOB.search(text) or text.startswith("~"))
+        return Word(text, static)
+
+    def assign(self, node: Any, cond: bool) -> None:
+        """Record ``NAME=value`` statements; a value known only at run time is recorded as None."""
+        nodes = [node] if node.type == "variable_assignment" else [
+            c for c in node.children if c.type == "variable_assignment"]
+        for child in nodes:
+            name = _text(child.children[0])
+            parts = child.children[2:]
+            word = self._subst(_resolve(parts[0])) if parts else Word("")
+            new = word.text if word.static else None
+            if self._repeated or (cond and self.vars.get(name, new) != new):
+                new = None   # set in a loop, or on some paths only: no single value
+            self.vars[name] = new
 
     def _new_pipeline(self) -> int:
         self._pipelines += 1
@@ -225,6 +257,7 @@ class _Walker:
             self.redirected(node, op, cond, depth, pipe)
         elif kind in ("variable_assignment", "variable_assignments"):
             self.substitutions(node, depth)
+            self.assign(node, cond)
         elif kind in ("declaration_command", "unset_command", "test_command"):
             self.builtin(node, op, cond, depth, pipe)
         elif kind == "for_statement":
@@ -275,6 +308,9 @@ class _Walker:
     ) -> None:
         """List a loop's condition and body once, flagged ``repeated`` (domain unknown)."""
         self._approximate("loop", node)
+        for child in node.children:     # the loop variable takes values only known at run time
+            if child.type == "variable_name":
+                self.vars[_text(child)] = None
         self._repeated += 1
         try:
             first = True
@@ -335,22 +371,27 @@ class _Walker:
             elif child.type not in _STATEMENTS:
                 self.substitutions(child, depth)
 
-    def redirect(self, node: Any) -> Dict[str, str]:
-        info: Dict[str, str] = {}
+    def redirects(self, node: Any) -> List[Dict[str, str]]:
+        """The redirections of one redirect node. A heredoc carries the redirections written
+        after its marker (``cat <<EOF > f.txt``) as children of its own."""
         if node.type == "heredoc_redirect":
-            info["op"] = "<<"
+            info = {"op": "<<"}
+            nested: List[Dict[str, str]] = []
             for child in node.children:
                 if child.type == "heredoc_start":
                     info["target"] = _text(child)
-            return info
+                elif child.type in ("file_redirect", "herestring_redirect"):
+                    nested.extend(self.redirects(child))
+            return [info] + nested
+        info = {}
         for child in node.children:
             if child.type == "file_descriptor":
                 info["fd"] = _text(child)
             elif not child.is_named:
-                info["op"] = _text(child)
+                info["op"] = info.get("op", "") + _text(child)
             else:
-                info["target"] = _resolve(child).text
-        return info
+                info["target"] = self._subst(_resolve(child)).text
+        return [info]
 
     def heredoc_tail(self, node: Any, cond: bool, depth: int) -> None:
         """Visit commands that follow a heredoc marker (``cat <<EOF | grep x``)."""
@@ -377,7 +418,7 @@ class _Walker:
             if child.type not in _REDIRECTS and child.is_named:
                 body = child
                 self.visit(child, op, cond, depth, pipe)
-        redirects = [self.redirect(c) for c in nodes]
+        redirects = [r for c in nodes for r in self.redirects(c)]
         whole = body is not None and body.type in (_GROUPS | _CONTROL)
         targets = self.out[start:] if whole else self.out[start:][-1:]
         for cmd in targets:
@@ -394,6 +435,8 @@ class _Walker:
             name, rest = "test", [c for c in node.children if c.is_named]
         else:
             name, rest = _text(node.children[0]), node.children[1:]
+            if node.type == "declaration_command":   # export F=x / local F=x
+                self.assign(node, cond)
         argv = [Word(name)]
         for child in rest:
             text = _text(child)
@@ -414,12 +457,12 @@ class _Walker:
                 value = child.children[2:]
                 env[_text(child.children[0])] = _resolve(value[0]).text if value else ""
             elif child.type == "command_name":
-                argv.append(_resolve(child.children[0]))
+                argv.append(self._subst(_resolve(child.children[0])))
             elif child.type in _REDIRECTS:
-                redirects.append(self.redirect(child))
+                redirects.extend(self.redirects(child))
                 tails.append(child)
             elif child.is_named:
-                argv.append(_resolve(child))
+                argv.append(self._subst(_resolve(child)))
         if not argv:
             return
         cmd = CommandNode(
@@ -462,6 +505,9 @@ class _Walker:
                 if arg.text in ("-m", "-c") or not arg.text.startswith("-"):
                     break
         elif name == "find":
+            # `-exec CMD {} ;` hands CMD to find: emit CMD as its own call, and give find
+            # the segment as one `-exec "CMD {} ;"` word so it does not read as paths.
+            kept: List[Word] = [cmd.argv[0]]
             i = 0
             while i < len(args):
                 if args[i].text in _FIND_EXEC:
@@ -470,8 +516,13 @@ class _Walker:
                         stop += 1
                     if stop > i + 1:
                         self._wrapped(args[i + 1:stop], cmd, "find")
-                    i = stop
+                    segment = " ".join(w.text for w in args[i + 1:stop + 1])
+                    kept += [args[i], Word(segment, all(w.static for w in args[i + 1:stop]))]
+                    i = stop + 1
+                    continue
+                kept.append(args[i])
                 i += 1
+            cmd.argv = kept
 
     @staticmethod
     def _shell_script(args: List[Word]) -> Optional[Word]:

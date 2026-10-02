@@ -72,14 +72,26 @@ cp:
     - {flags: [-n, --no-clobber], type: bool}
     - {flags: [-p], dest: preserve, type: bool}
     - {flags: [-v, --verbose], type: bool}
-  positionals: [{name: sources, nargs: "+"}, {name: destination}]
+    - {flags: [-t, --target-directory], dest: destination_dir}
+    - {flags: [-T, --no-target-directory], type: bool}
+    - {flags: [-u, --update], type: bool}
+    - {flags: [-l, --link], type: bool}
+    - {flags: [-s, --symbolic-link], type: bool}
+  positionals:
+    - {name: sources, nargs: "+"}
+    - {name: destination, unless: [destination_dir]}
 
 mv:
   options:
     - {flags: [-f, --force], type: bool}
     - {flags: [-n, --no-clobber], type: bool}
     - {flags: [-v, --verbose], type: bool}
-  positionals: [{name: sources, nargs: "+"}, {name: destination}]
+    - {flags: [-t, --target-directory], dest: destination_dir}
+    - {flags: [-T, --no-target-directory], type: bool}
+    - {flags: [-u, --update], type: bool}
+  positionals:
+    - {name: sources, nargs: "+"}
+    - {name: destination, unless: [destination_dir]}
 
 ln:
   options:
@@ -121,6 +133,7 @@ grep:
 
 find:
   options:
+    - {flags: [-exec, -execdir, -ok, -okdir], dest: exec, type: list, help: "Command find runs on each match; it is also checked as its own call"}
     - {flags: [-name]}
     - {flags: [-iname]}
     - {flags: [-path], dest: path_pattern}
@@ -171,11 +184,16 @@ wc:
 
 sed:
   options:
-    - {flags: [-i, --in-place], type: bool}
+    - {flags: [-i, --in-place], dest: in_place, type: attached}
     - {flags: [-n, --quiet], type: bool}
     - {flags: [-E, -r, --regexp-extended], dest: extended, type: bool}
     - {flags: [-e, --expression], type: list}
-  positionals: [{name: args, nargs: "*"}]
+    - {flags: [-f, --file], dest: script_file}
+    - {flags: [-s, --separate], type: bool}
+    - {flags: [-z, --null-data], type: bool}
+  positionals:
+    - {name: script, nargs: "?", unless: [expression, script_file]}
+    - {name: paths, nargs: "*"}
 
 sort:
   options:
@@ -228,8 +246,11 @@ awk:
   options:
     - {flags: [-F, --field-separator]}
     - {flags: [-v, --assign], type: list}
-    - {flags: [-f, --file], type: list}
-  positionals: [{name: args, nargs: "*"}]
+    - {flags: [-f, --file], dest: program_file, type: list}
+    - {flags: [-i, --include], type: list, help: "Library to load; 'inplace' edits the files in place"}
+  positionals:
+    - {name: program, nargs: "?", unless: [program_file]}
+    - {name: paths, nargs: "*"}
 
 cut:
   options:
