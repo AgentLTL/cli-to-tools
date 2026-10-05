@@ -2,7 +2,7 @@
 
 Translate shell command lines into ordered, structured tool calls, so that an agent working
 through a single `bash(command=...)` tool can be constrained by a tool-call harness such as
-[AgentLTL](https://github.com/lailanelkoussy/AgentLTL).
+[AgentLTL](https://github.com/AgentLTL/AgentLTL).
 
 ```python
 from cli_to_tools import Translator
