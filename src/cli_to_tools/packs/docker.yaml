@@ -6,6 +6,13 @@ docker-compose: &compose
     - {flags: [-f, --file], type: list}
     - {flags: [-p, --project-name]}
     - {flags: [--env-file]}
+    - {flags: [--profile], type: list}
+    - {flags: [--project-directory]}
+    - {flags: [--ansi]}
+    - {flags: [--progress]}
+    - {flags: [--parallel]}
+    - {flags: [--dry-run], type: bool}
+    - {flags: [--compatibility], type: bool}
   subcommands:
     up:
       options:

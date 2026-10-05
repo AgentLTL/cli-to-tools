@@ -122,7 +122,13 @@ _CASES: list[tuple[str, list[tuple[str, dict[str, Any]]]]] = [
                         "env": ["X=1"], "image": "ubuntu:22.04", "command": ["ls", "-la", "/b"]})]),
     ("docker compose -f a.yml up -d web", [
         ("docker_compose_up", {"file": ["a.yml"], "detach": True, "services": ["web"]})]),
+    ("docker compose --profile mcpu up -d web", [
+        ("docker_compose_up", {"profile": ["mcpu"], "detach": True, "services": ["web"]})]),
     ("docker-compose down -v", [("docker_compose_down", {"volumes": True})]),
+    ("git submodule update --init --recursive", [
+        ("git_submodule_update", {"init": True, "recursive": True})]),
+    ("git submodule add -b main https://x/y.git lib/y", [
+        ("git_submodule_add", {"branch": "main", "url": "https://x/y.git", "path": "lib/y"})]),
     ("docker system prune -af", [("docker_system_prune", {"all": True, "force": True})]),
     ("python3 -m pip install -U requests 'numpy>=2'", [
         ("python", {"module": "pip"}),

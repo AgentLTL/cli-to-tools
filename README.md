@@ -94,7 +94,7 @@ These packs are bundled and loaded by default:
 |---|---|
 | `shell` | coreutils and text tools: `ls`, `cat`, `cp`, `mv`, `rm`, `find`, `sed`, `awk`, `grep`, ...; environment (`printenv`, `export`, `declare`); binary viewers (`base64`, `strings`, `xxd`, `hexdump`, `od`) |
 | `files` | other file writers: `perl`, `ed`, `vim`, `nano`, `code`, `dd`, `install`, `truncate`, `shred`, `split`, `sponge`, `patch`, archives (`unzip`, `zip`, `7z`) |
-| `git` | `git`, including `git credential` |
+| `git` | `git`, including `git credential` and `git submodule` |
 | `docker` | `docker` (including `inspect`, `login`), with `docker compose` / `docker-compose` (including `config`) |
 | `python` | `python`, `pip`, `pytest` |
 | `network` | `curl`, `wget`, `ssh`, `scp`, `rsync` |

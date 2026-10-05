@@ -192,3 +192,42 @@ git:
       positionals: [{name: key, nargs: "?"}, {name: value, nargs: "?"}]
     credential:
       positionals: [{name: action, choices: [fill, approve, reject]}]
+    submodule:
+      options:
+        - {flags: [-q, --quiet], type: bool}
+      subcommands:
+        update:
+          options:
+            - {flags: [--init], type: bool}
+            - {flags: [--recursive], type: bool}
+            - {flags: [--remote], type: bool}
+            - {flags: [-f, --force], type: bool}
+            - {flags: [--checkout], type: bool}
+            - {flags: [--rebase], type: bool}
+            - {flags: [--merge], type: bool}
+            - {flags: [-N, --no-fetch], type: bool}
+            - {flags: [--depth]}
+            - {flags: [-j, --jobs]}
+          positionals: [{name: paths, nargs: "*"}]
+        add:
+          options:
+            - {flags: [-b, --branch]}
+            - {flags: [-f, --force], type: bool}
+            - {flags: [--name]}
+            - {flags: [--depth]}
+          positionals: [{name: url}, {name: path, nargs: "?"}]
+        status:
+          options: [{flags: [--recursive], type: bool}, {flags: [--cached], type: bool}]
+          positionals: [{name: paths, nargs: "*"}]
+        init: {positionals: [{name: paths, nargs: "*"}]}
+        deinit:
+          options: [{flags: [-f, --force], type: bool}, {flags: [--all], type: bool}]
+          positionals: [{name: paths, nargs: "*"}]
+        sync:
+          options: [{flags: [--recursive], type: bool}]
+          positionals: [{name: paths, nargs: "*"}]
+        foreach:
+          posix: true
+          options: [{flags: [--recursive], type: bool}]
+          positionals: [{name: command, nargs: "*"}]
+        absorbgitdirs: {}
