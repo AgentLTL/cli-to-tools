@@ -4,6 +4,10 @@ Translate shell command lines into ordered, structured tool calls, so that an ag
 through a single `bash(command=...)` tool can be constrained by a tool-call harness such as
 [AgentLTL](https://github.com/AgentLTL/AgentLTL).
 
+📖 **Documentation: [agentltl.github.io/shell](https://agentltl.github.io/shell/)**, including
+every [supported command](https://agentltl.github.io/shell/commands/) with its tools and
+arguments.
+
 ```python
 from cli_to_tools import Translator
 
