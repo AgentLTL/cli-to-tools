@@ -9,12 +9,17 @@ Example::
         print(call.name, call.args)
 """
 
+from ._effects import PATH_NAMES, UNKNOWN_PATHS, Paths, normalize_paths
 from ._model import CommandNode, ToolCall, TranslationError, Word
 from ._shell import parse_command_line
 from ._spec import CommandSpec, SpecRegistry, available_packs, normalize_tool_name
 from ._translate import Translator
 
 __all__ = [
+    "PATH_NAMES",
+    "Paths",
+    "UNKNOWN_PATHS",
+    "normalize_paths",
     "CommandNode",
     "CommandSpec",
     "SpecRegistry",

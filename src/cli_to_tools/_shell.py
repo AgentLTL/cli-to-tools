@@ -396,9 +396,13 @@ class _Walker:
         return [info]
 
     def heredoc_tail(self, node: Any, cond: bool, depth: int) -> None:
-        """Visit commands that follow a heredoc marker (``cat <<EOF | grep x``)."""
+        """Visit commands that follow a heredoc marker (``cat <<EOF | grep x``,
+        ``cat <<EOF && ls``)."""
+        op: Optional[str] = None
         for child in node.children:
-            if child.type == "pipeline":
+            if not child.is_named and child.type in ("&&", "||"):
+                op = child.type
+            elif child.type == "pipeline":
                 if self.out and self.out[-1].pipeline is None:
                     self.out[-1].pipeline = self._new_pipeline()
                 pipe = self.out[-1].pipeline if self.out else self._new_pipeline()
@@ -406,7 +410,10 @@ class _Walker:
                     if sub.is_named:
                         self.visit(sub, "|", cond, depth, pipe)
             elif child.type in _STATEMENTS:
-                raise TranslationError("unsupported command after heredoc marker", _text(node))
+                if op is None:
+                    raise TranslationError("unsupported command after heredoc marker",
+                                           _text(node))
+                self.visit(child, op, True, depth, None)
 
     def redirected(
         self, node: Any, op: Optional[str], cond: bool, depth: int, pipe: Optional[int],
@@ -629,6 +636,49 @@ def _first_error(node: Any) -> Any:
     return node
 
 
+# A redirection written after a heredoc marker, before the rest of the line:
+# `cmd <<'EOF' 2>&1 | tail`. tree-sitter-bash cannot parse it when a pipe or another
+# command follows.
+_HEREDOC_THEN_REDIRECTS = re.compile(
+    r"""(<<-?[ \t]*(?:'[^'\n]*'|"[^"\n]*"|[^\s|;&<>()]+))"""
+    r"((?:[ \t]+\d*(?:&>>?|>>|>&|<&|>\||>|<)[ \t]*[^\s|;&<>()]+)+)")
+
+
+_HEREDOC_THEN_LIST = re.compile(
+    r"""<<(-?)[ \t]*('([^'\n]*)'|"([^"\n]*)"|([^\s|;&<>()]+))[ \t]*;[ \t]*([^\n]*)""")
+
+
+def _defer_after_heredoc(source: str) -> str:
+    """``cat <<EOF; ls`` runs ls after cat, so it is the same as writing ls on the line
+    after the heredoc's end marker -- which tree-sitter-bash can parse."""
+    lines = source.split("\n")
+    for i, line in enumerate(lines):
+        m = _HEREDOC_THEN_LIST.search(line)
+        if not m:
+            continue
+        word = m.group(3) if m.group(3) is not None else (
+            m.group(4) if m.group(4) is not None else m.group(5))
+        rest = m.group(6)
+        for j in range(i + 1, len(lines)):
+            if (lines[j].lstrip("\t") if m.group(1) else lines[j]) == word:
+                head = line[:m.start()] + line[m.start():m.start(6)].rstrip().rstrip(";").rstrip()
+                return "\n".join(lines[:i] + [head] + lines[i + 1:j + 1] + [rest]
+                                 + lines[j + 1:])
+        break
+    return source
+
+
+def _hoist_heredoc_redirects(source: str) -> str:
+    """Move redirections written after a heredoc marker in front of it. Each applies to a
+    different file descriptor than the heredoc (stdin), so the meaning is unchanged; one
+    that reads stdin (`<`, `<&`) is left in place."""
+    def swap(m: "re.Match[str]") -> str:
+        if re.search(r"(^|[ \t])\d*<", m.group(2)):
+            return m.group(0)
+        return m.group(2).lstrip() + " " + m.group(1)
+    return _HEREDOC_THEN_REDIRECTS.sub(swap, source)
+
+
 def parse_command_line(source: str, strict: bool = False) -> List[CommandNode]:
     """Parse a bash command line into its simple commands, in execution order.
 
@@ -650,7 +700,11 @@ def parse_command_line(source: str, strict: bool = False) -> List[CommandNode]:
         raise TranslationError("command line must be a string", repr(source))
     root = _PARSER.parse(source.encode()).root_node
     if root.has_error:
-        raise TranslationError("shell syntax error", _text(_first_error(root)))
+        hoisted = _defer_after_heredoc(_hoist_heredoc_redirects(source))
+        retry = _PARSER.parse(hoisted.encode()).root_node if hoisted != source else root
+        if retry.has_error:
+            raise TranslationError("shell syntax error", _text(_first_error(root)))
+        root = retry
     walker = _Walker(strict)
     walker.statements(root.children, None, False, 0, None)
     return walker.out

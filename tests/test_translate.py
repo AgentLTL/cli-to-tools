@@ -75,7 +75,7 @@ def test_tool_schemas() -> None:
     assert {"git", "git_commit", "git_stash_pop", "docker_compose_up"} <= set(schemas)
     props = schemas["git_commit"]["parameters"]["properties"]
     assert props["message"]["type"] == "array" and props["all"]["type"] == "boolean"
-    assert props["paths"] == {"type": "array", "items": {"type": "string"}}
+    assert props["paths"] == {"type": "array", "items": {"type": "string"}, "format": "path"}
     assert "cwd" in props  # options of the parent command are part of the arguments
     assert schemas["git_commit"]["description"] == "The `git commit` command."
     # a description or enum appears only where the spec states one

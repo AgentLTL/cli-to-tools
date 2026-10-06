@@ -1,23 +1,25 @@
 """
 cli_to_tools/agentltl.py – AgentLTL glue (optional, needs ``agentltl`` installed).
 
-:class:`CliConstraintEnforcer` is a drop-in ``ConstraintEnforcer`` that expands
-calls to a shell tool (``bash(command=...)``) into the structured calls of the
-command line, so constraints are written over ``git_push``, ``rm`` ... instead
-of over one opaque ``bash`` tool. A chain is approved or rejected as a whole,
-before anything runs.
+Constraints are written over ``git_push``, ``rm`` ... instead of over one opaque ``bash``
+tool: a call to a shell tool (``bash(command=...)``) is checked as the structured calls
+of its command line, all or nothing, before anything runs
+(:meth:`agentltl.Enforcer.check_chain`).
+
+- :class:`ShellEnforcer` is an :class:`agentltl.Enforcer`: ``check()`` returns an
+  :class:`agentltl.Decision` whose ``index`` names the refused command of the line.
+- :class:`CliConstraintEnforcer` is the same with the original ``ConstraintEnforcer``
+  return values (``"allow"`` or ``(kind, feedback)``, raising on a stop).
 
 Usage::
 
     from agentltl import Before, Constraint
-    from cli_to_tools.agentltl import CliConstraintEnforcer
+    from cli_to_tools.agentltl import ShellEnforcer
 
-    enforcer = CliConstraintEnforcer(
-        constraints=[Constraint("commit_first", Before("git_commit", "git_push"))],
-        shell_tools={"bash": "command"},
-    )
-    enforcer.check("bash", {"command": "git push && git commit -m x"}, step_number=1)
-    # ("soft_block" | ..., feedback)  – or raises on HARD_STOP
+    enforcer = ShellEnforcer([Constraint("commit_first", Before("git_commit", "git_push"))],
+                             shell_tools={"bash": "command"})
+    decision = enforcer.check("bash", {"command": "git push && git commit -m x"})
+    decision.action, decision.index        # ("stop", 0): git push is refused
 
     # With the native backend:
     agent._enforcer = CliConstraintEnforcer.from_enforcer(agent._enforcer)
@@ -27,6 +29,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping, Optional
 
+from agentltl import Decision as _Decision
+from agentltl import Enforcer
 from agentltl._enforcement_engine import ConstraintEnforcer, Decision
 
 from ._model import ToolCall, TranslationError
@@ -34,27 +38,14 @@ from ._translate import Translator
 
 DEFAULT_SHELL_TOOLS: Dict[str, str] = {"bash": "command"}
 
+_REJECTED = ("[COMMAND REJECTED]\nThe command line could not be analysed and was NOT executed.\n"
+             "Reason: {reason}\n"
+             "Rewrite it as plain commands chained with ;, &&, || or | "
+             "(no eval, background jobs, function definitions or dynamic command names).")
 
-class CliConstraintEnforcer(ConstraintEnforcer):
-    """``ConstraintEnforcer`` that checks shell command lines call by call.
 
-    Args:
-        *args: Forwarded to :class:`ConstraintEnforcer`.
-        translator: Translator to use. Defaults to all bundled packs.
-        shell_tools: Maps each shell tool name to the argument holding the command
-            line. Calls to any other tool are checked unchanged.
-        **kwargs: Forwarded to :class:`ConstraintEnforcer`.
-
-    Attributes:
-        untranslatable: Command lines rejected because they could not be translated.
-    """
-
-    def __init__(
-        self, *args: Any, translator: Optional[Translator] = None,
-        shell_tools: Optional[Mapping[str, str]] = None, **kwargs: Any,
-    ) -> None:
-        self._init_cli(translator, shell_tools)
-        super().__init__(*args, **kwargs)
+class _Shell:
+    """What both enforcers add: shell tools are checked as their command lines."""
 
     def _init_cli(
         self, translator: Optional[Translator], shell_tools: Optional[Mapping[str, str]],
@@ -62,14 +53,11 @@ class CliConstraintEnforcer(ConstraintEnforcer):
         self._translator = translator or Translator()
         self._shell_tools = dict(DEFAULT_SHELL_TOOLS if shell_tools is None else shell_tools)
         self._approved: Dict[str, List[ToolCall]] = {}
-        self._blocked_command: Optional[str] = None
         self.untranslatable: List[Dict[str, Any]] = []
 
     @classmethod
-    def from_enforcer(
-        cls, enforcer: ConstraintEnforcer, translator: Optional[Translator] = None,
-        shell_tools: Optional[Mapping[str, str]] = None,
-    ) -> CliConstraintEnforcer:
+    def from_enforcer(cls, enforcer: Enforcer, translator: Optional[Translator] = None,
+                      shell_tools: Optional[Mapping[str, str]] = None) -> Any:
         """Wrap an existing enforcer, keeping its constraints, settings and state."""
         new = cls.__new__(cls)
         new.__dict__.update(enforcer.__dict__)
@@ -77,9 +65,8 @@ class CliConstraintEnforcer(ConstraintEnforcer):
         return new
 
     def reset(self) -> None:
-        super().reset()
+        super().reset()  # type: ignore[misc]
         self._approved = {}
-        self._blocked_command = None
         self.untranslatable = []
 
     def translate(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[List[ToolCall]]:
@@ -88,62 +75,92 @@ class CliConstraintEnforcer(ConstraintEnforcer):
             return None
         return self._translator.translate((tool_args or {}).get(self._shell_tools[tool_name]))
 
-    def check(self, tool_name: str, tool_args: Dict[str, Any], step_number: int) -> Decision:
-        """Check a call; a shell command line is checked call by call, all or nothing."""
+    def _check_shell(self, tool_name: str, tool_args: Dict[str, Any],
+                     step_number: Optional[int], generation: Any) -> Optional[_Decision]:
+        """The decision for a shell tool call; None for any other tool."""
         if tool_name not in self._shell_tools:
-            return super().check(tool_name, tool_args, step_number)
+            return None
         command = (tool_args or {}).get(self._shell_tools[tool_name])
         try:
             calls = self._translator.translate(command)
         except TranslationError as exc:
-            self.untranslatable.append({"step": step_number, "command": command, "reason": str(exc)})
-            return ("persistent_block", (
-                "[COMMAND REJECTED]\nThe command line could not be analysed and was NOT executed.\n"
-                f"Reason: {exc}\n"
-                "Rewrite it as plain commands chained with ;, &&, || or | "
-                "(no eval, background jobs, function definitions or dynamic command names)."
-            ))
+            self.untranslatable.append({"step": step_number, "command": command,
+                                        "reason": str(exc)})
+            return _Decision("block", feedback=_REJECTED.format(reason=exc))
+        decision = Enforcer.check_chain(self, [(c.name, c.args) for c in calls], step_number,
+                                        generation=generation, chain_key=command)
+        if decision.allowed:
+            self._approved[command] = calls
+        elif decision.index is not None:
+            decision.feedback = (f"[In command line: {command}]\n"
+                                 f"[Blocked at: {calls[decision.index].meta['source']}]\n"
+                                 f"No part of the command line was executed.\n{decision.feedback}")
+        return decision
 
-        retry = command == self._blocked_command
-        start = len(self._completed_tool_calls)
-        try:
-            for call in calls:
-                pointer = self._last_blocked_call
-                overrides = len(self._block_and_warn_overrides)
-                decision = super().check(call.name, call.args, step_number)
-                if decision != "allow":
-                    self._blocked_command = command
-                    return (decision[0], (
-                        f"[In command line: {command}]\n[Blocked at: {call.meta['source']}]\n"
-                        f"No part of the command line was executed.\n{decision[1]}"
-                    ))
-                # An allowed call clears the BLOCK_AND_WARN pointer. When the model re-issues
-                # the identical command line, keep it alive until the blocked call is reached.
-                if (retry and pointer is not None and self._last_blocked_call is None
-                        and len(self._block_and_warn_overrides) == overrides):
-                    self._last_blocked_call = pointer
-                # Tentative: later calls of the chain must see this one in the trace.
-                self._completed_tool_calls.append(call.to_dict())
-        finally:
-            del self._completed_tool_calls[start:]
-        self._blocked_command = None
-        self._approved[command] = calls
-        return "allow"
-
-    def record_completed(
-        self, tool_name: str, tool_args: Dict[str, Any], tool_id: str, result: str,
-    ) -> None:
-        """Record an executed call; a shell command line is recorded as its structured calls."""
+    def record_completed(self, tool_name: str, tool_args: Optional[Dict[str, Any]] = None,
+                         tool_id: str = "", result: Any = None, *,
+                         status: Optional[int] = None) -> None:
+        """Record an executed call; a shell command line is recorded as its structured calls.
+        Its output and exit status belong to the line as a whole: they go on the last call."""
         if tool_name not in self._shell_tools:
-            return super().record_completed(tool_name, tool_args, tool_id, result)
+            return super().record_completed(tool_name, tool_args, tool_id,  # type: ignore[misc]
+                                            result, status=status)
         command = (tool_args or {}).get(self._shell_tools[tool_name])
         calls = self._approved.pop(command, None) or self._translator.translate(command)
         for i, call in enumerate(calls):
             entry = call.to_dict()
             entry["cli"]["tool_call_id"] = tool_id
-            # The output belongs to the command line as a whole; attach it to the last call.
-            entry["result"] = result if i == len(calls) - 1 else None
-            self._completed_tool_calls.append(entry)
+            last = i == len(calls) - 1
+            entry["result"] = result if last else None
+            if last and status is not None:
+                entry["status"] = status
+            self.record_entry(entry)  # type: ignore[attr-defined]
+
+
+class ShellEnforcer(_Shell, Enforcer):
+    """:class:`agentltl.Enforcer` that checks shell command lines call by call.
+
+    Args:
+        *args: Forwarded to :class:`agentltl.Enforcer`.
+        translator: Translator to use. Defaults to all bundled packs.
+        shell_tools: Maps each shell tool name to the argument holding the command
+            line. Calls to any other tool are checked unchanged.
+        **kwargs: Forwarded to :class:`agentltl.Enforcer`.
+
+    Attributes:
+        untranslatable: Command lines refused because they could not be translated.
+    """
+
+    def __init__(self, *args: Any, translator: Optional[Translator] = None,
+                 shell_tools: Optional[Mapping[str, str]] = None, **kwargs: Any) -> None:
+        self._init_cli(translator, shell_tools)
+        super().__init__(*args, **kwargs)
+
+    def check(self, tool_name: str, tool_args: Optional[Dict[str, Any]] = None,
+              step_number: Optional[int] = None, *, generation: Any = None) -> _Decision:
+        decision = self._check_shell(tool_name, tool_args or {}, step_number, generation)
+        if decision is None:
+            decision = Enforcer.check(self, tool_name, tool_args, step_number,
+                                      generation=generation)
+        return decision
+
+
+class CliConstraintEnforcer(_Shell, ConstraintEnforcer):
+    """:class:`ShellEnforcer` with the original ``ConstraintEnforcer`` interface:
+    ``check()`` returns ``"allow"`` or ``(kind, feedback)``, and raises on a stop."""
+
+    def __init__(self, *args: Any, translator: Optional[Translator] = None,
+                 shell_tools: Optional[Mapping[str, str]] = None, **kwargs: Any) -> None:
+        self._init_cli(translator, shell_tools)
+        super().__init__(*args, **kwargs)
+
+    def check(self, tool_name: str, tool_args: Optional[Dict[str, Any]] = None,  # type: ignore[override]
+              step_number: Optional[int] = None, **kwargs: Any) -> Decision:
+        decision = self._check_shell(tool_name, tool_args or {}, step_number,
+                                     kwargs.get("generation"))
+        if decision is None:
+            return ConstraintEnforcer.check(self, tool_name, tool_args, step_number, **kwargs)
+        return self.legacy(decision)
 
 
 def expand_tool_calls(

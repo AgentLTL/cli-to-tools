@@ -117,3 +117,22 @@ def test_expand_tool_calls_for_post_hoc_verification() -> None:
     result = verify_trace({"tool_calls": expanded}, [_COMMIT_FIRST])
     assert result["tool_sequence"] == ["git_push", "git_commit", "search", "bash"]
     assert result["constraints"][0]["passed"] is False
+
+
+def test_shell_enforcer_returns_a_decision_naming_the_refused_command() -> None:
+    from cli_to_tools.agentltl import ShellEnforcer
+    enforcer = ShellEnforcer([_COMMIT_FIRST], default_severity=ConstraintSeverity.PERSISTENT_BLOCK)
+    d = enforcer.check("bash", {"command": "ls && git push && git commit -m x"})
+    assert (d.action, d.index, d.constraint_name) == ("block", 1, "commit_first")
+    assert "[Blocked at: git push]" in d.feedback
+    d = enforcer.check("bash", {"command": "eval x"})
+    assert d.action == "block" and "COMMAND REJECTED" in d.feedback
+
+
+def test_the_exit_status_goes_on_the_last_call_of_the_line() -> None:
+    from cli_to_tools.agentltl import ShellEnforcer
+    enforcer = ShellEnforcer([_COMMIT_FIRST])
+    command = "git add . && git commit -m x"
+    assert enforcer.check("bash", {"command": command}).allowed
+    enforcer.record_completed("bash", {"command": command}, "id", "out", status=1)
+    assert [c.get("status") for c in enforcer.trace] == [None, 1]

@@ -26,6 +26,13 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import yaml
 
+try:  # libyaml: parses the bundled packs about seven times faster
+    from yaml import CSafeLoader as _Loader
+except ImportError:  # pragma: no cover
+    from yaml import SafeLoader as _Loader  # type: ignore[assignment]
+
+from ._effects import PATH_NAMES
+
 _OPTION_TYPES = {"str", "bool", "count", "list", "int", "attached"}
 
 
@@ -74,6 +81,9 @@ class CommandSpec:
         """Argument that collects the words after a literal ``--`` (git's paths)."""
         self.key_value = False
         """Operands are ``key=value`` words (``dd if=a of=b``)."""
+        self.paths: Dict[str, bool] = {}
+        """Arguments declared to hold (True) or not to hold (False) file paths; by default
+        the names in :data:`cli_to_tools._effects.PATH_NAMES` do."""
 
     def add_argument(self, *args: Any, **kwargs: Any) -> argparse.Action:
         """Declare an option or positional; same signature as ``ArgumentParser.add_argument``."""
@@ -94,6 +104,24 @@ class CommandSpec:
         script operand; ``cp -t DIR`` leaves no destination operand)."""
         self._unless[positional] = list(dests)
         self._variants.clear()
+
+    def path_keys(self) -> List[str]:
+        """The arguments holding file paths: declared ``path: true``, or named in
+        :data:`PATH_NAMES` and not declared ``path: false``. Includes the parent's."""
+        parent = getattr(self, "_parent", None)
+        declared = {**(parent.paths if parent is not None else {}), **self.paths}
+        names = dict.fromkeys([*PATH_NAMES, *declared])
+        return [n for n in names if declared.get(n, n in PATH_NAMES)]
+
+    def find(self, tool_name: str) -> Optional[CommandSpec]:
+        """The spec (this one, or a subcommand's) that produces *tool_name*."""
+        if tool_name == self.tool_name:
+            return self
+        for sub in self.subcommands.values():
+            hit = sub.find(tool_name)
+            if hit is not None:
+                return hit
+        return None
 
     def subcommand(
         self, name: str, tool_name: Optional[str] = None, posix: bool = False,
@@ -237,6 +265,7 @@ class CommandSpec:
     def _properties(self) -> Dict[str, Dict[str, Any]]:
         parent = getattr(self, "_parent", None)
         props = parent._properties() if parent is not None else {}
+        path_keys = set(self.path_keys())
         for action in self._parser._actions:
             if isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
                 schema: Dict[str, Any] = {"type": "boolean"}
@@ -251,6 +280,8 @@ class CommandSpec:
             # assert free-text values against a parameter that documents nothing.
             if action.choices:
                 schema["enum"] = list(action.choices)
+            if action.dest in path_keys:
+                schema["format"] = "path"
             if action.help:
                 schema["description"] = action.help
             props[action.dest] = schema
@@ -259,6 +290,8 @@ class CommandSpec:
             props[f"{dest}_suffix"] = {"type": "string"}
         if self.after_dashdash:
             props[self.after_dashdash] = {"type": "array", "items": {"type": "string"}}
+            if self.after_dashdash in path_keys:
+                props[self.after_dashdash]["format"] = "path"
         return props
 
     def tool_schemas(self) -> List[Dict[str, Any]]:
@@ -354,10 +387,16 @@ class CommandSpec:
             _add_option(spec, opt, executable)
         globals_ = [*inherited, *(o for o in data.get("options", []) if o.get("global"))]
         for pos in data.get("positionals", []):
+            unknown = set(pos) - {"name", "nargs", "help", "choices", "unless", "path"}
+            if unknown:
+                raise ValueError(f"spec '{executable}': positional {pos.get('name')}: unknown "
+                                 f"keys {sorted(unknown)}")
             kwargs = {key: pos[key] for key in ("nargs", "help", "choices") if key in pos}
             spec.add_argument(pos["name"], **kwargs)
             if pos.get("unless"):
                 spec.add_unless(pos["name"], pos["unless"])
+            if "path" in pos:
+                spec.paths[pos["name"]] = bool(pos["path"])
         for name, sub in (data.get("subcommands") or {}).items():
             cls.from_dict(name, sub, _parent=spec, _globals=globals_)
         return spec
@@ -370,7 +409,7 @@ def _add_option(spec: CommandSpec, opt: Dict[str, Any], executable: str,
     kind = opt.get("type", "str")
     if kind not in _OPTION_TYPES:
         raise ValueError(f"spec '{executable}': unknown option type '{kind}'")
-    unknown = set(opt) - {"flags", "type", "dest", "help", "choices", "global"}
+    unknown = set(opt) - {"flags", "type", "dest", "help", "choices", "global", "path"}
     if unknown:
         raise ValueError(f"spec '{executable}': option {opt.get('flags')}: unknown keys "
                          f"{sorted(unknown)}")
@@ -391,7 +430,9 @@ def _add_option(spec: CommandSpec, opt: Dict[str, Any], executable: str,
         kwargs["type"] = int
     if inherited:
         kwargs["default"] = argparse.SUPPRESS
-    spec.add_argument(*opt["flags"], **kwargs)
+    action = spec.add_argument(*opt["flags"], **kwargs)
+    if "path" in opt:
+        spec.paths[action.dest] = bool(opt["path"])
 
 
 def merge_spec_dicts(base: Optional[Dict[str, Any]], extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -414,6 +455,9 @@ def merge_spec_dicts(base: Optional[Dict[str, Any]], extra: Optional[Dict[str, A
 class SpecRegistry:
     """Lookup table from executable name to :class:`CommandSpec`.
 
+    Specs loaded from YAML or dicts are built on first use, so a registry holding every
+    bundled pack costs little until a command is looked up.
+
     Args:
         packs: Names of bundled packs to load. ``None`` loads all of them;
             an empty list loads none.
@@ -422,6 +466,7 @@ class SpecRegistry:
     def __init__(self, packs: Optional[Iterable[str]] = None) -> None:
         self._specs: Dict[str, CommandSpec] = {}
         self._raw: Dict[str, Dict[str, Any]] = {}
+        self._pending: Dict[str, str] = {}     # executable or alias -> raw key, not built yet
         for pack in (available_packs() if packs is None else packs):
             self.load_pack(pack)
 
@@ -429,45 +474,67 @@ class SpecRegistry:
         """Add or replace the spec for ``spec.executable``."""
         for key in (spec.executable, *aliases):
             self._specs[key] = spec
+            self._pending.pop(key, None)
         return spec
 
     def get(self, executable: str) -> Optional[CommandSpec]:
         """Return the spec for *executable* (a path is reduced to its basename)."""
-        return self._specs.get(os.path.basename(executable))
+        name = os.path.basename(executable)
+        if name in self._pending:
+            self._build(self._pending[name])
+        return self._specs.get(name)
+
+    def _build(self, key: str) -> None:
+        body = self._raw[key]
+        self.register(CommandSpec.from_dict(key, body), body.get("aliases", ()))
+
+    def executables(self) -> List[str]:
+        """Every executable (and alias) with a spec."""
+        return sorted({*self._specs, *self._pending})
 
     def tool_schemas(self) -> List[Dict[str, Any]]:
         """JSON-schema description of every tool the registered specs can produce."""
+        for key in list(dict.fromkeys(self._pending.values())):
+            self._build(key)
         out: Dict[str, Dict[str, Any]] = {}
         for spec in self._specs.values():
             for schema in spec.tool_schemas():
                 out.setdefault(schema["name"], schema)
         return sorted(out.values(), key=lambda s: s["name"])
 
-    def load_dict(self, data: Dict[str, Any], extend: bool = False) -> None:
+    def load_dict(self, data: Dict[str, Any], extend: bool = False,
+                  validate: bool = True) -> None:
         """Register the specs of *data*, replacing earlier specs for the same executables.
 
         An entry with ``extend: true`` (or every entry, with *extend*, unless it says
         ``extend: false``) is merged into the earlier spec instead (see :func:`merge_spec_dicts`),
-        so adding one subcommand to ``kubectl`` keeps the bundled ones.
+        so adding one subcommand to ``kubectl`` keeps the bundled ones. With *validate*
+        (the default) each spec is built once now, so a malformed one fails here rather
+        than on first use.
         """
         for executable, body in data.items():
             body = dict(body or {})
             if body.pop("extend", extend) and executable in self._raw:
                 body = merge_spec_dicts(self._raw[executable], body)
             self._raw[executable] = body
-            self.register(CommandSpec.from_dict(executable, body), body.get("aliases", ()))
+            if validate:
+                CommandSpec.from_dict(executable, body)
+            for key in (executable, *body.get("aliases", ())):
+                self._specs.pop(key, None)
+                self._pending[key] = executable
 
     def load_yaml(self, path: str) -> None:
         """Load specs from a YAML file; later definitions override earlier ones."""
         with open(path, encoding="utf-8") as fh:
-            self.load_dict(yaml.safe_load(fh) or {})
+            self.load_dict(yaml.load(fh, Loader=_Loader) or {})
 
     def load_pack(self, name: str) -> None:
         """Load a bundled pack by name (``shell``, ``git``, ``docker``, ...)."""
         if name not in available_packs():
             raise ValueError(f"unknown pack '{name}'; available: {available_packs()}")
         text = resources.files("cli_to_tools").joinpath("packs", f"{name}.yaml").read_text("utf-8")
-        self.load_dict(yaml.safe_load(text) or {})
+        # the bundled packs are tested, so they are only built when used
+        self.load_dict(yaml.load(text, Loader=_Loader) or {}, validate=False)
 
 
 def available_packs() -> List[str]:

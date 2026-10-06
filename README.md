@@ -83,6 +83,26 @@ Not unwrapped: commands that run a command string elsewhere or in another langua
 `bash script.sh`). These appear as one call with the command visible in its arguments; forbid or
 restrict them in your constraints if that matters.
 
+### What commands do to files
+
+`Translator(shell_effects=True, paths=Paths(cwd, root))` adds what a guard needs on top of the
+arguments themselves:
+
+| Argument | What it holds |
+|---|---|
+| `redirect_to`, `redirect_from` | files a redirection writes (`> f`, `>> f`, `2> f`, `cat <<EOF > f`) or reads (`< f`) |
+| `overwrite_to` | the redirections that truncate (`>`, `&>`; not `>>`, nor `/dev/null`) |
+| `unknown_paths` | path arguments only known at run time: `True` under `xargs`, else a list (`rm $UNSET` → `["paths"]`) |
+| `paths` of `patch` / `git apply` | the files the diff modifies |
+| `output` of `curl -O` | the file it writes |
+
+Path arguments are made absolute, resolved from the directory the line has moved to: in
+`cd sub && rm a`, `a` is `sub/a`. A `cd` lasts until the end of its subshell, one in a pipeline
+changes nothing, and after `cd $D` relative paths are unknown. Which arguments hold paths:
+those named in `PATH_NAMES` (`path`, `paths`, `file`, `destination`, ...), plus any a spec
+marks `path: true` (and minus those it marks `path: false`). Tool schemas show them with
+`"format": "path"`.
+
 ### Fail closed
 
 `translate()` raises `TranslationError` instead of guessing on: syntax errors, function
@@ -138,6 +158,7 @@ deploy:
     - {flags: [--force], type: bool}          # str (default) | bool | count | list | int
     - {flags: [--mode], choices: [fast, safe], help: "How to deploy."}   # optional, for tool schemas
     - {flags: [-n, --namespace], global: true}   # also accepted after a subcommand
+    - {flags: [--manifest], path: true}          # holds a file path (see shell_effects)
   positionals:
     - {name: services, nargs: "*"}
   subcommands: {}              # nested specs, same schema -> tool "deploy_<name>"
@@ -157,23 +178,28 @@ Boolean flags are always present in the arguments (`False` when absent), so both
 
 ## AgentLTL
 
-`CliConstraintEnforcer` is a drop-in `ConstraintEnforcer`. Calls to a shell tool are expanded into
-the structured calls of the command line; every other tool is checked unchanged.
+`ShellEnforcer` is an `agentltl.Enforcer` (AgentLTL 0.2 or later). Calls to a shell tool are
+expanded into the structured calls of the command line and checked with
+`Enforcer.check_chain`; every other tool is checked unchanged.
 
 ```python
 from agentltl import Before, CalledWith, Constraint, Globally, Not
-from cli_to_tools.agentltl import CliConstraintEnforcer
+from cli_to_tools.agentltl import ShellEnforcer
 
-enforcer = CliConstraintEnforcer(
-    constraints=[
+enforcer = ShellEnforcer(
+    [
         Constraint("commit_before_push", Before("git_commit", "git_push")),
         Constraint("no_force_push", Globally(Not(CalledWith("git_push", {"force": True})))),
     ],
     shell_tools={"bash": "command"},           # tool name -> argument holding the command line
 )
 
-enforcer.check("bash", {"command": "git push && git commit -m x"}, step_number=1)   # blocked
+decision = enforcer.check("bash", {"command": "git push && git commit -m x"})
+decision.action, decision.index                # ("stop", 0): the first command, git push
 ```
+
+`CliConstraintEnforcer` is the same with AgentLTL's original `ConstraintEnforcer` interface
+(`"allow"` or `(kind, feedback)`, raising on a stop).
 
 - **All or nothing.** The calls of a chain are checked in order, each against a trace that
   already contains the earlier calls of the same chain. If any call is blocked, the whole command
@@ -181,7 +207,8 @@ enforcer.check("bash", {"command": "git push && git commit -m x"}, step_number=1
 - **Untranslatable** command lines are blocked with feedback telling the model how to rephrase,
   and listed in `enforcer.untranslatable`.
 - **`record_completed`** stores one trace entry per structured call (with the `cli` metadata, so
-  `Predicate`s can read `call.raw["cli"]`). The tool result is attached to the last call.
+  `Predicate`s can read `call.raw["cli"]`). The tool result and exit status (`status=`) are
+  attached to the last call.
 - **Native backend:** with AgentLTL's `cli` extra, pass `shell_tools={"bash": "command"}` to
   `AgentWithConstraints(backend="native")`, `MultiTurnAgent` or `NativeOpenAIAgent`; the agent
   then uses this enforcer and emits the structured calls in `metrics["tool_calls"]`. On an
