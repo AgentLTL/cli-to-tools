@@ -27,10 +27,17 @@ The library only translates. Executing the command line stays with the caller.
 Paste this into your coding agent (Claude Code, Codex, Copilot CLI, Mistral Vibe...):
 
 ```
-Install cli-to-tools from https://github.com/AgentLTL/cli-to-tools in a virtual environment (pip install "git+https://github.com/AgentLTL/cli-to-tools.git"), then use cli_to_tools.Translator to translate a shell command line of mine into tool calls and show me the result.
+Install cli-to-tools (pip install cli-to-tools, in a virtual environment), then use cli_to_tools.Translator to translate a shell command line of mine into tool calls and show me the result.
 ```
 
 Or install manually:
+
+```bash
+pip install cli-to-tools
+pip install "cli-to-tools[agentltl]"   # with AgentLTL, for cli_to_tools.agentltl
+```
+
+To work on the library itself, from a clone:
 
 ```bash
 pip install -e ".[dev]"

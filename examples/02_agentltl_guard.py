@@ -1,6 +1,6 @@
 """Enforce AgentLTL constraints on a `bash` tool, without an LLM in the loop.
 
-Requires AgentLTL:  pip install -e /path/to/AgentLTL
+Requires AgentLTL:  pip install "cli-to-tools[agentltl]"
 
 With the native backend the same enforcer is installed with::
 
