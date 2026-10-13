@@ -62,8 +62,9 @@ def test_files_only_known_at_run_time(registry):
 
 def test_resolved_variables_and_home(registry, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))     # what `~` expands to on Windows
     assert args("D=secrets; rm $D/key", registry)["paths"] == ["/proj/secrets/key"]
-    assert args("rm ~/notes", registry)["paths"] == [str(tmp_path / "notes")]
+    assert args("rm ~/notes", registry)["paths"] == [(tmp_path / "notes").as_posix()]
 
 
 def test_patch_targets_come_from_the_diff(registry, tmp_path):
@@ -71,7 +72,7 @@ def test_patch_targets_come_from_the_diff(registry, tmp_path):
         "diff --git a/migrations/001.sql b/migrations/001.sql\n"
         "--- a/migrations/001.sql\n+++ b/migrations/001.sql\n@@ -1 +1 @@\n-x\n+y\n")
     assert args("git apply fix.diff", registry, str(tmp_path))["paths"] == [
-        str(tmp_path / "migrations/001.sql")]
+        (tmp_path / "migrations/001.sql").as_posix()]
     assert args("git apply missing.diff", registry, str(tmp_path))[UNKNOWN_PATHS] is True
 
 
