@@ -35,6 +35,16 @@ UNKNOWN_PATHS = "unknown_paths"
 _DEVICES = ("/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty")
 
 
+def posix(path: str) -> str:
+    """*path* with ``/`` separators on every platform (a no-op off Windows).
+
+    Rules write path globs with ``/`` (``**/.env``, ``src/*.py``), and two calls name the
+    same file the same way, so every path this package reports uses ``/``; Python opens
+    ``C:/proj/a.txt`` on Windows just as well as ``C:\\proj\\a.txt``.
+    """
+    return path.replace(os.sep, "/") if os.sep != "/" else path
+
+
 @dataclass(frozen=True)
 class Paths:
     """Where relative paths are resolved from (``cwd``), and the project root, if any."""
@@ -42,10 +52,20 @@ class Paths:
     cwd: str = ""
     root: str = ""
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "cwd", posix(self.cwd))
+        object.__setattr__(self, "root", posix(self.root))
+
+
+def is_absolute(path: str) -> bool:
+    """A rooted path: ``/x``, ``~``, or on Windows ``C:\\x``, ``C:/x`` and ``\\x``."""
+    return path.startswith(("/", "~", "\\")) or (len(path) > 2 and path[1] == ":"
+                                                and path[2] in "/\\" and path[0].isalpha())
+
 
 def is_device(target: str) -> bool:
     """Writing to these discards or shows the output; it overwrites no file."""
-    return target in _DEVICES or target.startswith("/dev/fd/")
+    return target in _DEVICES or target.startswith("/dev/fd/") or target.upper() == "NUL"
 
 
 def redirect_files(redirects: Sequence[Dict[str, str]]) -> Tuple[List[str], List[str], List[str]]:
@@ -69,7 +89,7 @@ def redirect_files(redirects: Sequence[Dict[str, str]]) -> Tuple[List[str], List
 
 
 def absolute(value: str, paths: Paths) -> str:
-    return os.path.normpath(os.path.join(paths.cwd or os.getcwd(), os.path.expanduser(value)))
+    return posix(os.path.normpath(os.path.join(paths.cwd or os.getcwd(), os.path.expanduser(value))))
 
 
 def canonical(value: str, paths: Paths) -> str:
@@ -114,7 +134,7 @@ def relative_path_keys(args: Dict[str, Any], keys: Iterable[str]) -> List[str]:
     """The path arguments among *keys* holding a relative path."""
     out = []
     for key in keys:
-        if any(v and not v.startswith(("/", "~", "$", "-")) and "://" not in v
+        if any(v and not is_absolute(v) and not v.startswith(("$", "-")) and "://" not in v
                for v in strings(args.get(key))):
             out.append(key)
     return out
@@ -138,8 +158,8 @@ def cd_target(name: str, args: Dict[str, Any], here: Optional[str]) -> Optional[
         return None
     target = os.path.expanduser(target)
     if os.path.isabs(target):
-        return os.path.normpath(target)
-    return None if here is None else os.path.normpath(os.path.join(here, target))
+        return posix(os.path.normpath(target))
+    return None if here is None else posix(os.path.normpath(os.path.join(here, target)))
 
 
 def patch_targets(name: str, args: Dict[str, Any], paths: Paths) -> None:
