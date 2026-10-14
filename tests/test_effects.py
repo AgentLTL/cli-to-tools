@@ -1,5 +1,7 @@
 """Translator(shell_effects=True): redirections, paths after cd, run-time-only files."""
 
+import os
+
 import pytest
 
 from cli_to_tools import Paths, SpecRegistry, Translator, UNKNOWN_PATHS
@@ -32,6 +34,25 @@ def test_redirections(registry):
     assert args("cat <<EOF > out.txt\nhi\nEOF", registry)["overwrite_to"] == ["/proj/out.txt"]
     a = args("make 2>&1 >/dev/null", registry)
     assert a["redirect_to"] == ["/dev/null"] and "overwrite_to" not in a
+
+
+def test_windows_path_forms_are_rooted_and_nul_is_a_device_only_on_windows(monkeypatch):
+    from cli_to_tools import _effects
+    monkeypatch.setattr(_effects, "WINDOWS", True)
+    assert all(_effects.is_absolute(p) for p in ("C:\\foo", "c:/foo", "\\foo", "/foo", "~"))
+    assert not _effects.is_absolute("foo") and not _effects.is_absolute("C:foo")
+    assert _effects.is_device("NUL") and _effects.is_device("nul")
+
+    monkeypatch.setattr(_effects, "WINDOWS", False)   # POSIX: these are ordinary file names
+    assert not _effects.is_absolute("C:\\foo") and not _effects.is_absolute("\\foo")
+    assert _effects.is_absolute("/foo") and _effects.is_absolute("~")
+    assert not _effects.is_device("NUL") and _effects.is_device("/dev/null")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="paths are resolved the Windows way there")
+def test_on_posix_a_backslash_name_is_relative_and_NUL_is_a_file(registry):
+    assert args("cd $D; rm '\\foo'", registry)[UNKNOWN_PATHS] == ["paths"]
+    assert args("echo x > NUL", registry)["overwrite_to"] == ["/proj/NUL"]
 
 
 def test_cd_moves_where_relative_paths_point(registry):
