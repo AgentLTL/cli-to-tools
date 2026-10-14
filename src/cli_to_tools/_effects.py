@@ -57,15 +57,23 @@ class Paths:
         object.__setattr__(self, "root", posix(self.root))
 
 
+WINDOWS = os.name == "nt"
+
+
 def is_absolute(path: str) -> bool:
-    """A rooted path: ``/x``, ``~``, or on Windows ``C:\\x``, ``C:/x`` and ``\\x``."""
-    return path.startswith(("/", "~", "\\")) or (len(path) > 2 and path[1] == ":"
-                                                and path[2] in "/\\" and path[0].isalpha())
+    """A rooted path: ``/x``, ``~``, or on Windows ``C:\\x``, ``C:/x`` and ``\\x``.
+
+    Off Windows ``\\x`` and ``C:\\x`` are ordinary relative file names."""
+    if path.startswith(("/", "~")):
+        return True
+    return WINDOWS and (path.startswith("\\") or (len(path) > 2 and path[1] == ":"
+                                                   and path[2] in "/\\" and path[0].isalpha()))
 
 
 def is_device(target: str) -> bool:
     """Writing to these discards or shows the output; it overwrites no file."""
-    return target in _DEVICES or target.startswith("/dev/fd/") or target.upper() == "NUL"
+    return (target in _DEVICES or target.startswith("/dev/fd/")
+            or (WINDOWS and target.upper() == "NUL"))
 
 
 def redirect_files(redirects: Sequence[Dict[str, str]]) -> Tuple[List[str], List[str], List[str]]:
